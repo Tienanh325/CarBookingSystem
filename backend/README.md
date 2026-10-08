@@ -49,6 +49,28 @@ npm run dev
 
 Server ket noi Prisma truoc khi listen va fail fast neu MySQL khong san sang.
 
+## Ban do, lich hen va dieu phoi
+
+- Routing mac dinh dung OSRM va luu GeoJSON polyline, quang duong bo, ETA vao chuyen xe.
+- Neu khai bao `MAPBOX_ACCESS_TOKEN`, backend tu dong dung profile `mapbox/driving-traffic` de ETA co du lieu giao thong hien tai va lich su.
+- Tim dia chi dung Photon/OSM qua backend proxy co debounce o frontend, gioi han 1 request/giay va cache 10 phut. Co the thay bang private Photon qua `GEOCODING_BASE_URL`.
+- Moi chuyen ho tro toi da 2 diem dung; phi dung tinh theo `waitingFeePerMinute` va 5 phut moi diem.
+- Lich hen bat dau dieu phoi truoc 30 phut. Worker luu trang thai trong MySQL nen khoi dong lai khong mat countdown.
+- Dieu phoi chi gui loi moi cho mot tai xe gan nhat, mo ban kinh 1 km, 3 km, 5 km theo tung moc 30 giay. Moi loi moi mac dinh co 20 giay de phan hoi.
+
+Bien moi trong `.env`:
+
+```text
+ROUTING_BASE_URL=https://router.project-osrm.org
+MAPBOX_ACCESS_TOKEN=
+GEOCODING_BASE_URL=https://photon.komoot.io
+MATCHING_OFFER_SECONDS=20
+SCHEDULE_MATCH_LEAD_MINUTES=30
+MATCHING_MAX_WAIT_SECONDS=180
+```
+
+Public Photon va OSRM phu hop development/demo. Production nen dung instance rieng hoac nha cung cap co SLA.
+
 ## Migration va seed
 
 ```powershell

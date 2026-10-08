@@ -1,18 +1,18 @@
 import { z } from "zod";
 
+export const pointSchema = z.object({
+    address: z.string().min(5),
+    lat: z.number().min(-90).max(90),
+    lng: z.number().min(-180).max(180)
+});
+
 export const estimateSchema = z.object({
-  pickup: z.object({
-    address: z.string().min(5),
-    lat: z.number().min(-90).max(90),
-    lng: z.number().min(-180).max(180)
-  }),
-  dropoff: z.object({
-    address: z.string().min(5),
-    lat: z.number().min(-90).max(90),
-    lng: z.number().min(-180).max(180)
-  }),
+  pickup: pointSchema,
+  dropoff: pointSchema,
+  stops: z.array(pointSchema.extend({ dwellMinutes: z.number().int().min(1).max(30).default(5) })).max(2).default([]),
   vehicleTypeId: z.string().uuid(),
-  promotionCode: z.string().trim().min(1).optional()
+  promotionCode: z.string().trim().min(1).optional(),
+  scheduledAt: z.coerce.date().optional()
 });
 
 export const createPricingRuleSchema = z.object({

@@ -6,30 +6,37 @@ import { estimateRide } from "../pricing/pricing.service";
 import { notifyRide } from "../../realtime/socket";
 
 export const activeRideStatuses: RideStatus[] = ["REQUESTED","SEARCHING_DRIVER","ACCEPTED","DRIVER_ARRIVING","ARRIVED","IN_PROGRESS"];
+export const visibleRideStatuses: RideStatus[] = ["SCHEDULED", ...activeRideStatuses];
 export const contactSelect = { id:true, fullName:true, phone:true, avatarUrl:true } as const;
 export const rideInclude = {
   customer: { select: contactSelect },
   driver: { select: { id:true, userId:true, ratingAvg:true, user:{select:contactSelect}, location:true, vehicles:{ where:{ isActive:true }, include:{ vehicleType:true } } } },
-  vehicleType:true, payment:true, rating:true, statusLogs:{orderBy:{createdAt:"asc"}}
+  vehicleType:true, payment:true, rating:true, stops:{orderBy:{orderIndex:"asc"}}, statusLogs:{orderBy:{createdAt:"asc"}}
 } satisfies Prisma.RideInclude;
 type Point = { address:string; lat:number; lng:number };
-type Input = { pickup:Point; dropoff:Point; vehicleTypeId:string; promotionCode?:string; paymentMethod:PaymentMethod };
+type Stop = Point & { dwellMinutes?:number };
+type Input = { pickup:Point; dropoff:Point; stops?:Stop[]; vehicleTypeId:string; promotionCode?:string; paymentMethod:PaymentMethod; scheduledAt?:Date };
 export async function createRide(customerId:string, input:Input) {
   if(input.paymentMethod !== "CASH") throw new ApiError(422,"PAYMENT_NOT_CONFIGURED","Hien tai chi ho tro tien mat");
+  const now = new Date();
+  const scheduledAt = input.scheduledAt ? new Date(input.scheduledAt) : undefined;
+  if (scheduledAt && scheduledAt.getTime() < now.getTime() + 10 * 60_000) throw new ApiError(422,"SCHEDULE_TOO_SOON","Thoi gian hen phai cach hien tai it nhat 10 phut");
+  if (scheduledAt && scheduledAt.getTime() > now.getTime() + 30 * 24 * 60 * 60_000) throw new ApiError(422,"SCHEDULE_TOO_FAR","Chi co the dat truoc toi da 30 ngay");
+  const status: RideStatus = scheduledAt ? "SCHEDULED" : "SEARCHING_DRIVER";
   const ride = await prisma.$transaction(async tx => {
     // Lock this customer's row to serialize simultaneous booking attempts.
     await tx.user.update({where:{id:customerId},data:{updatedAt:new Date()}});
-    if(await tx.ride.findFirst({where:{customerId,status:{in:activeRideStatuses}}})) throw new ApiError(409,"RIDE_ACTIVE_EXISTS","Ban dang co chuyen hoat dong");
+    if(await tx.ride.findFirst({where:{customerId,status:{in:visibleRideStatuses}}})) throw new ApiError(409,"RIDE_ACTIVE_EXISTS","Ban dang co chuyen hoat dong hoac lich hen sap toi");
     if(input.promotionCode) {
       const promo = await tx.promotion.findUnique({where:{code:input.promotionCode.trim().toUpperCase()}});
       if(promo) await tx.promotion.update({where:{id:promo.id},data:{updatedAt:new Date()}});
     }
     const estimate = await estimateRide(input,customerId,tx);
-    const created = await tx.ride.create({data:{customerId,vehicleTypeId:input.vehicleTypeId,pickupAddress:input.pickup.address,pickupLat:input.pickup.lat,pickupLng:input.pickup.lng,dropoffAddress:input.dropoff.address,dropoffLat:input.dropoff.lat,dropoffLng:input.dropoff.lng,estimatedDistanceKm:estimate.distanceKm,estimatedDurationMin:estimate.durationMin,estimatedFare:estimate.finalFare,promotionId:estimate.promotionId,paymentMethod:"CASH",status:"SEARCHING_DRIVER",statusLogs:{create:{toStatus:"SEARCHING_DRIVER",changedById:customerId}}},include:rideInclude});
+    const created = await tx.ride.create({data:{customerId,vehicleTypeId:input.vehicleTypeId,pickupAddress:input.pickup.address,pickupLat:input.pickup.lat,pickupLng:input.pickup.lng,dropoffAddress:input.dropoff.address,dropoffLat:input.dropoff.lat,dropoffLng:input.dropoff.lng,estimatedDistanceKm:estimate.distanceKm,estimatedDurationMin:estimate.durationMin,estimatedFare:estimate.finalFare,stopFee:estimate.stopFee,promotionId:estimate.promotionId,paymentMethod:"CASH",status,scheduledAt,matchingStartedAt:scheduledAt?undefined:now,routeGeometry:estimate.routeGeometry,routeProvider:estimate.routeProvider,stops:{create:(input.stops??[]).map((stop,index)=>({orderIndex:index,address:stop.address,lat:stop.lat,lng:stop.lng,dwellMinutes:stop.dwellMinutes??5,fee:(stop.dwellMinutes??5)*Number(estimate.stopFee/(input.stops?.reduce((sum,item)=>sum+(item.dwellMinutes??5),0)||1))}))},statusLogs:{create:{toStatus:status,changedById:customerId}}},include:rideInclude});
     if(estimate.promotionId) await tx.promotionUsage.create({data:{promotionId:estimate.promotionId,userId:customerId,rideId:created.id,discount:estimate.discount}});
     return created;
   }, {isolationLevel:Prisma.TransactionIsolationLevel.ReadCommitted});
-  await notifyRide(ride.id,"ride.request.created");
+  await notifyRide(ride.id, status === "SCHEDULED" ? "ride.scheduled" : "ride.request.created");
   return ride;
 }
 export async function estimateRideForCustomer(customerId:string,input:Omit<Input,"paymentMethod">) {return estimateRide(input,customerId);}
@@ -47,7 +54,7 @@ async function getRideOwnerWhere(userId:string,roles:RoleName[],scope?:RideScope
 }
 export async function getCurrentRide(userId:string,roles:RoleName[],scope?:RideScope) {
   const owner=await getRideOwnerWhere(userId,roles,scope);
-  return prisma.ride.findFirst({where:{...owner,status:{in:activeRideStatuses}},include:rideInclude,orderBy:{requestedAt:"desc"}});
+  return prisma.ride.findFirst({where:{...owner,status:{in:visibleRideStatuses}},include:rideInclude,orderBy:{requestedAt:"desc"}});
 }
 export async function listRides(userId:string,roles:RoleName[],scope?:RideScope) {
   const owner=await getRideOwnerWhere(userId,roles,scope);
@@ -63,11 +70,12 @@ export async function cancelRideByCustomer(id:string,customerId:string,reason:st
   const cancelled = await prisma.$transaction(async tx=>{
     const ride=await tx.ride.findFirst({where:{id,customerId}});
     if(!ride) throw new ApiError(404,"RIDE_NOT_FOUND","Khong tim thay chuyen");
-    const changed=await tx.ride.updateMany({where:{id,customerId,status:{in:["SEARCHING_DRIVER","ACCEPTED","DRIVER_ARRIVING","ARRIVED"]}},data:{status:"CANCELLED_BY_CUSTOMER",cancelledAt:new Date(),cancelReason:reason}});
+    const changed=await tx.ride.updateMany({where:{id,customerId,status:{in:["SCHEDULED","SEARCHING_DRIVER","ACCEPTED","DRIVER_ARRIVING","ARRIVED"]}},data:{status:"CANCELLED_BY_CUSTOMER",cancelledAt:new Date(),cancelReason:reason}});
     if(!changed.count) throw new ApiError(409,"RIDE_INVALID_STATUS","Khong the huy chuyen");
     if(ride.driverId) await tx.driverProfile.update({where:{id:ride.driverId},data:{onlineStatus:"ONLINE"}});
     await tx.rideStatusLog.create({data:{rideId:id,fromStatus:ride.status,toStatus:"CANCELLED_BY_CUSTOMER",changedById:customerId,note:reason}});
     await tx.promotionUsage.deleteMany({where:{rideId:id}});
+    await tx.driverOffer.updateMany({where:{rideId:id,status:"PENDING"},data:{status:"CANCELLED",respondedAt:new Date()}});
     return tx.ride.findUniqueOrThrow({where:{id},include:rideInclude});
   });
   await notifyRide(id,"ride.cancelled"); return cancelled;

@@ -74,6 +74,12 @@ async function ensureDriver(request: APIRequestContext, phone: string, suffix: s
     await request.post(`${apiUrl}/auth/login`, { data: { phone, password } })
   );
   await apiData(
+    await request.post(`${apiUrl}/drivers/me/location`, {
+      headers: headers(auth),
+      data: { lat: 10.775, lng: 106.701, speed: 0 }
+    })
+  );
+  await apiData(
     await request.post(`${apiUrl}/drivers/me/offline`, {
       headers: headers(auth),
       data: {}
@@ -105,6 +111,8 @@ test("customer uses MySQL vehicle data and receives a fare estimate", async ({ p
 
   await expect(page.getByRole("heading", { name: "Bạn muốn đi đâu?" })).toBeVisible();
   await expect(page.getByTitle("Cập nhật trực tiếp")).toBeVisible({ timeout: 8_000 });
+  await page.locator("details.manual-coordinate-entry").nth(0).getByText("Nhập tọa độ thủ công").click();
+  await page.locator("details.manual-coordinate-entry").nth(1).getByText("Nhập tọa độ thủ công").click();
   await page.getByLabel("Điểm đón - Địa chỉ").fill("Chợ Bến Thành, Quận 1");
   await page.getByLabel("Điểm đón - Vĩ độ").fill("10.7723");
   await page.getByLabel("Điểm đón - Kinh độ").fill("106.6981");

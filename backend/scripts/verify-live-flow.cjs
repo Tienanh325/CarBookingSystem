@@ -152,6 +152,11 @@ async function main() {
     body: { refreshToken: driverAuth.tokens.refreshToken }
   });
   assert.ok(driverAuth.user.roles.includes("DRIVER"));
+  await request("/api/drivers/me/location", {
+    token: driverAuth.tokens.accessToken,
+    method: "POST",
+    body: { lat: 10.775, lng: 106.701, heading: 90, speed: 0 }
+  });
   await request("/api/drivers/me/online", {
     token: driverAuth.tokens.accessToken,
     method: "POST",
@@ -166,6 +171,7 @@ async function main() {
   console.log("5/9 Estimating and creating a ride in MySQL");
   const trip = {
     pickup: { address: "Ben Thanh Market, District 1", lat: 10.7723, lng: 106.6981 },
+    stops: [{ address: "Saigon Central Post Office, District 1", lat: 10.7798, lng: 106.6999, dwellMinutes: 5 }],
     dropoff: { address: "Landmark 81, Binh Thanh", lat: 10.795, lng: 106.7218 },
     vehicleTypeId: vehicleType.id
   };
@@ -175,6 +181,8 @@ async function main() {
     body: trip
   });
   assert.ok(estimate.finalFare > 0);
+  assert.ok(estimate.routeGeometry.coordinates.length > 2);
+  assert.equal(estimate.legs.length, 2);
   const ride = await request("/api/rides", {
     token: customerAuth.tokens.accessToken,
     method: "POST",
@@ -182,6 +190,7 @@ async function main() {
   });
   createdRideIds.push(ride.id);
   assert.equal(ride.status, "SEARCHING_DRIVER");
+  assert.equal(ride.stops.length, 1);
   const incomingPayload = await incomingRide;
   assert.equal(incomingPayload.rideId, ride.id);
   await joinRide(customerSocket, ride.id);
@@ -222,6 +231,18 @@ async function main() {
     token: customerAuth.tokens.accessToken,
     method: "POST",
     body: { score: 5, comment: "Verified live flow" }
+  });
+  const scheduled = await request("/api/rides", {
+    token: customerAuth.tokens.accessToken,
+    method: "POST",
+    body: { ...trip, stops: [], scheduledAt: new Date(Date.now() + 2 * 60 * 60_000).toISOString(), paymentMethod: "CASH" }
+  });
+  createdRideIds.push(scheduled.id);
+  assert.equal(scheduled.status, "SCHEDULED");
+  await request(`/api/rides/${scheduled.id}/cancel`, {
+    token: customerAuth.tokens.accessToken,
+    method: "POST",
+    body: { reason: "Live flow scheduled booking cleanup" }
   });
 
   console.log("8/9 Verifying role-scoped screens and admin reporting");

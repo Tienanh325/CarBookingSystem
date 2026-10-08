@@ -6,6 +6,25 @@
 .live-form .check-label { display:flex; align-items:center; gap:10px; }
 .live-form fieldset { min-width:0; border:1px solid var(--line); border-radius:6px; padding:12px; }
 .live-form legend { font-size:13px; font-weight:600; }
+.address-autocomplete { position:relative; min-width:0; }
+.address-input-wrap { display:flex; align-items:center; gap:8px; height:44px; padding:0 10px; border:1px solid var(--line-strong); border-radius:6px; background:#fff; }
+.address-input-wrap:focus-within { border-color:var(--aqua); box-shadow:0 0 0 3px rgba(8,127,140,.12); }
+.address-input-wrap input { height:40px; padding:0; border:0; box-shadow:none!important; }
+.address-input-wrap svg { flex:0 0 auto; color:var(--muted); }
+.address-suggestions { position:absolute; z-index:1200; top:calc(100% - 1px); right:0; left:0; overflow:hidden; border:1px solid var(--line-strong); border-radius:0 0 7px 7px; background:#fff; box-shadow:var(--shadow); }
+.address-suggestions>span { display:block; padding:12px; color:var(--muted); font-size:12px; }
+.address-suggestions button { display:flex; width:100%; align-items:flex-start; gap:9px; padding:11px 12px; border:0; border-bottom:1px solid var(--line); color:var(--ink); background:#fff; text-align:left; font-size:12px; line-height:1.4; }
+.address-suggestions button:hover,.address-suggestions button:focus { background:var(--brand-soft); }
+.address-suggestions svg { flex:0 0 auto; margin-top:1px; color:var(--brand); }
+.selected-coordinate { display:block; margin-top:4px; color:var(--muted); font-size:10px; }
+.manual-coordinate-entry { margin-top:6px; color:var(--muted); font-size:11px; }
+.manual-coordinate-entry summary { cursor:pointer; }
+.manual-coordinate-entry>label { margin-top:8px; }
+.stop-row { display:grid; grid-template-columns:minmax(0,1fr) 36px; align-items:end; gap:8px; padding-left:10px; border-left:3px solid #d97706; }
+.stop-row>.icon-button { margin-bottom:18px; }
+.add-stop { width:100%; }
+.offer-countdown { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; padding:8px 10px; border-radius:6px; color:#7c4a03; background:#fff6df; font-size:11px; }
+.offer-countdown strong { font-size:18px; font-variant-numeric:tabular-nums; }
 .coordinate-fields { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px; }
 .live-tabs,.live-actions { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0; }
 .live-tabs button { border:0; border-bottom:2px solid transparent; background:transparent; padding:9px 6px; font-size:13px; }

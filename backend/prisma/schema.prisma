@@ -33,6 +33,7 @@ enum VehicleRegistrationStatus {
 }
 
 enum RideStatus {
+  SCHEDULED
   REQUESTED
   SEARCHING_DRIVER
   ACCEPTED
@@ -44,6 +45,14 @@ enum RideStatus {
   CANCELLED_BY_DRIVER
   CANCELLED_BY_SYSTEM
   NO_DRIVER_FOUND
+}
+
+enum DriverOfferStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  CANCELLED
 }
 
 enum PaymentMethod {
@@ -176,14 +185,15 @@ model DriverProfile {
   createdAt          DateTime                 @default(now()) @map("created_at")
   updatedAt          DateTime                 @updatedAt @map("updated_at")
 
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  vehicles  Vehicle[]
-  documents DriverDocument[]
-  rides     Ride[]
-  location  DriverLocation?
-  wallet    DriverWallet?
-  tickets   SupportTicket[]  @relation("DriverTickets")
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicles   Vehicle[]
+  documents  DriverDocument[]
+  rides      Ride[]
+  location   DriverLocation?
+  wallet     DriverWallet?
+  tickets    SupportTicket[]  @relation("DriverTickets")
   rejections RideRejection[]
+  offers     DriverOffer[]
 
   @@index([onlineStatus, verificationStatus])
   @@map("driver_profiles")
@@ -271,10 +281,15 @@ model Ride {
   estimatedDistanceKm  Decimal?      @map("estimated_distance_km") @db.Decimal(10, 2)
   estimatedDurationMin Int?          @map("estimated_duration_min")
   estimatedFare        Decimal?      @map("estimated_fare") @db.Decimal(12, 2)
+  stopFee              Decimal       @default(0) @map("stop_fee") @db.Decimal(12, 2)
   finalFare            Decimal?      @map("final_fare") @db.Decimal(12, 2)
   promotionId          String?       @map("promotion_id") @db.Char(36)
   paymentMethod        PaymentMethod @default(CASH) @map("payment_method")
   status               RideStatus    @default(REQUESTED)
+  scheduledAt          DateTime?     @map("scheduled_at")
+  matchingStartedAt    DateTime?     @map("matching_started_at")
+  routeGeometry        Json?         @map("route_geometry")
+  routeProvider        String?       @map("route_provider")
   requestedAt          DateTime      @default(now()) @map("requested_at")
   acceptedAt           DateTime?     @map("accepted_at")
   arrivedAt            DateTime?     @map("arrived_at")
@@ -296,11 +311,51 @@ model Ride {
   walletTransactions WalletTransaction[]
   promotionUsages    PromotionUsage[]
   rejections         RideRejection[]
+  stops              RideStop[]
+  offers             DriverOffer[]
 
   @@index([customerId, requestedAt])
   @@index([driverId, requestedAt])
   @@index([status, requestedAt])
   @@map("rides")
+}
+
+model RideStop {
+  id           String   @id @default(uuid()) @db.Char(36)
+  rideId       String   @map("ride_id") @db.Char(36)
+  orderIndex   Int      @map("order_index")
+  address      String
+  lat          Decimal  @db.Decimal(10, 7)
+  lng          Decimal  @db.Decimal(10, 7)
+  dwellMinutes Int      @default(5) @map("dwell_minutes")
+  fee          Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  ride Ride @relation(fields: [rideId], references: [id], onDelete: Cascade)
+
+  @@unique([rideId, orderIndex])
+  @@map("ride_stops")
+}
+
+model DriverOffer {
+  id               String            @id @default(uuid()) @db.Char(36)
+  rideId           String            @map("ride_id") @db.Char(36)
+  driverId         String            @map("driver_id") @db.Char(36)
+  radiusKm         Decimal           @map("radius_km") @db.Decimal(5, 2)
+  pickupDistanceKm Decimal           @map("pickup_distance_km") @db.Decimal(8, 2)
+  status           DriverOfferStatus @default(PENDING)
+  expiresAt        DateTime          @map("expires_at")
+  respondedAt      DateTime?         @map("responded_at")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  ride   Ride          @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  driver DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@unique([rideId, driverId])
+  @@index([driverId, status, expiresAt])
+  @@index([rideId, status])
+  @@map("driver_offers")
 }
 
 model RideStatusLog {
@@ -517,20 +572,22 @@ model AuditLog {
 }
 
 model AuthSession {
-  id String @id @default(uuid()) @db.Char(36)
-  userId String @db.Char(36)
-  refreshHash String @db.Char(64)
-  expiresAt DateTime
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id          String   @id @default(uuid()) @db.Char(36)
+  userId      String   @db.Char(36)
+  refreshHash String   @db.Char(64)
+  expiresAt   DateTime
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([userId])
   @@map("auth_sessions")
 }
 
 model RideRejection {
-  rideId String @db.Char(36)
-  driverId String @db.Char(36)
-  ride Ride @relation(fields: [rideId], references: [id], onDelete: Cascade)
-  driver DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  rideId   String        @db.Char(36)
+  driverId String        @db.Char(36)
+  ride     Ride          @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  driver   DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
   @@id([rideId, driverId])
   @@map("ride_rejections")
 }

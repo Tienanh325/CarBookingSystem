@@ -15,7 +15,10 @@ export function Modal({title,close,children}:{title:string;close:()=>void;childr
 export function RideDetails({ride}:{ride:Ride}){
   return <div className="ride-details"><p><strong>{labels[ride.status]??ride.status}</strong></p><p>Mã chuyến: {ride.id}</p>
     <p>Đón: {ride.pickupAddress}</p><p>Đến: {ride.dropoffAddress}</p>
-    <p>{date(ride.requestedAt)} · {money(ride.finalFare??ride.estimatedFare)}</p>
+    {ride.stops?.map((stop,index)=><p key={stop.id??index}>Dừng {index+1}: {stop.address}</p>)}
+    {ride.scheduledAt&&<p>Giờ đón dự kiến: {date(ride.scheduledAt)}</p>}
+    <p>{date(ride.requestedAt)} · {ride.estimatedDistanceKm} km · {ride.estimatedDurationMin} phút · {money(ride.finalFare??ride.estimatedFare)}</p>
+    {Number(ride.stopFee)>0&&<p>Phụ phí điểm dừng: {money(ride.stopFee)}</p>}
     {ride.driver&&<p>Tài xế: {ride.driver.user.fullName} · {ride.driver.vehicles?.[0]?.plateNumber}</p>}
     {ride.payment&&<p>Thanh toán: {labels[ride.payment.status]??ride.payment.status}</p>}
     {ride.rating&&<p>Đánh giá: {ride.rating.score}/5 · {ride.rating.comment}</p>}

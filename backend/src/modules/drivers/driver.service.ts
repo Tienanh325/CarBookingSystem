@@ -3,6 +3,7 @@ import { prisma } from "../../config/prisma";
 import { ApiError } from "../../utils/api-error";
 import { emitAdmin, emitToRide, notifyRide } from "../../realtime/socket";
 import { activeRideStatuses, rideInclude } from "../rides/ride.service";
+import { dispatchRide } from "../matching/matching.service";
 
 export async function getMe(userId:string) {
   const driver=await prisma.driverProfile.findUnique({where:{userId},include:{user:true,vehicles:{include:{vehicleType:true}},location:true,wallet:true}});
@@ -27,9 +28,10 @@ export async function updateMe(userId:string,input:{licenseNumber?:string;identi
 }
 export async function setOnline(userId:string,online:boolean) {
   const result=await prisma.$transaction(async tx=>{
-    const driver=await tx.driverProfile.findUnique({where:{userId},include:{vehicles:true}});
+    const driver=await tx.driverProfile.findUnique({where:{userId},include:{vehicles:true,location:true}});
     if(!driver) throw new ApiError(404,"DRIVER_PROFILE_NOT_FOUND","Chua co ho so");
     if(online && (driver.verificationStatus!=="APPROVED" || !driver.vehicles.some(v=>v.isActive&&v.registrationStatus==="APPROVED"))) throw new ApiError(403,"DRIVER_NOT_APPROVED","Ho so va xe chua duoc duyet");
+    if(online && (!driver.location || Date.now()-driver.location.updatedAt.getTime()>2*60_000)) throw new ApiError(422,"DRIVER_LOCATION_REQUIRED","Hay bat chia se GPS truoc khi Online");
     const changed=await tx.driverProfile.updateMany({where:{id:driver.id,onlineStatus:{not:"BUSY"}},data:{onlineStatus:online?"ONLINE":"OFFLINE"}});
     if(!changed.count) throw new ApiError(409,"DRIVER_BUSY","Dang co chuyen hoat dong");
     return tx.driverProfile.findUniqueOrThrow({where:{id:driver.id}});
@@ -46,29 +48,40 @@ export async function updateLocation(userId:string,input:{lat:number;lng:number;
 export async function listRideRequests(userId:string) {
   const driver=await getMe(userId);
   if(driver.verificationStatus!=="APPROVED" || driver.onlineStatus!=="ONLINE") return [];
-  const ids=driver.vehicles.filter(v=>v.isActive&&v.registrationStatus==="APPROVED").map(v=>v.vehicleTypeId);
-  return prisma.ride.findMany({where:{status:"SEARCHING_DRIVER",vehicleTypeId:{in:ids},rejections:{none:{driverId:driver.id}}},include:{vehicleType:true},orderBy:{requestedAt:"asc"},take:20});
+  const offers=await prisma.driverOffer.findMany({
+    where:{driverId:driver.id,status:"PENDING",expiresAt:{gt:new Date()},ride:{status:"SEARCHING_DRIVER",driverId:null}},
+    include:{ride:{include:{vehicleType:true,stops:{orderBy:{orderIndex:"asc"}}}}},
+    orderBy:{createdAt:"asc"},
+    take:5
+  });
+  return offers.map(offer=>({...offer.ride,offerExpiresAt:offer.expiresAt,pickupDistanceKm:Number(offer.pickupDistanceKm),matchingRadiusKm:Number(offer.radiusKm)}));
 }
 export async function acceptRide(userId:string,id:string) {
   const driver=await getMe(userId);
   const result=await prisma.$transaction(async tx=>{
     const ride=await tx.ride.findUnique({where:{id}});
     if(!ride || !driver.vehicles.some(v=>v.vehicleTypeId===ride.vehicleTypeId&&v.isActive&&v.registrationStatus==="APPROVED")) throw new ApiError(409,"RIDE_NOT_AVAILABLE","Chuyen khong phu hop");
+    const offer=await tx.driverOffer.updateMany({where:{rideId:id,driverId:driver.id,status:"PENDING",expiresAt:{gt:new Date()}},data:{status:"ACCEPTED",respondedAt:new Date()}});
+    if(!offer.count) throw new ApiError(409,"RIDE_OFFER_EXPIRED","Loi moi da het han hoac khong con hieu luc");
     const claim=await tx.ride.updateMany({where:{id,status:"SEARCHING_DRIVER",driverId:null},data:{driverId:driver.id,status:"ACCEPTED",acceptedAt:new Date()}});
     if(!claim.count) throw new ApiError(409,"RIDE_NOT_AVAILABLE","Chuyen da duoc nhan");
     const reserve=await tx.driverProfile.updateMany({where:{id:driver.id,verificationStatus:"APPROVED",onlineStatus:"ONLINE"},data:{onlineStatus:"BUSY"}});
     if(!reserve.count) throw new ApiError(409,"DRIVER_NOT_AVAILABLE","Tai xe khong san sang");
     await tx.rideStatusLog.create({data:{rideId:id,fromStatus:"SEARCHING_DRIVER",toStatus:"ACCEPTED",changedById:userId}});
+    await tx.driverOffer.updateMany({where:{rideId:id,status:"PENDING"},data:{status:"CANCELLED",respondedAt:new Date()}});
     return tx.ride.findUniqueOrThrow({where:{id},include:rideInclude});
   });
   await notifyRide(id,"ride.accepted");return result;
 }
 export async function rejectRide(userId:string,id:string) {
   const driver=await getMe(userId);
-  const vehicleTypeIds=driver.vehicles.filter(v=>v.isActive&&v.registrationStatus==="APPROVED").map(v=>v.vehicleTypeId);
-  const ride=await prisma.ride.findFirst({where:{id,status:"SEARCHING_DRIVER",vehicleTypeId:{in:vehicleTypeIds}}});
-  if(driver.verificationStatus!=="APPROVED"||driver.onlineStatus!=="ONLINE"||!ride) throw new ApiError(409,"RIDE_NOT_AVAILABLE","Chuyen khong con kha dung");
-  await prisma.rideRejection.upsert({where:{rideId_driverId:{rideId:id,driverId:driver.id}},create:{rideId:id,driverId:driver.id},update:{}});
+  const rejected=await prisma.$transaction(async tx=>{
+    const offer=await tx.driverOffer.updateMany({where:{rideId:id,driverId:driver.id,status:"PENDING",expiresAt:{gt:new Date()}},data:{status:"REJECTED",respondedAt:new Date()}});
+    if(!offer.count) throw new ApiError(409,"RIDE_OFFER_EXPIRED","Loi moi da het han hoac khong con hieu luc");
+    await tx.rideRejection.upsert({where:{rideId_driverId:{rideId:id,driverId:driver.id}},create:{rideId:id,driverId:driver.id},update:{}});
+    return true;
+  });
+  if(rejected) await dispatchRide(id);
   return {rejected:true};
 }
 async function transition(userId:string,id:string,from:RideStatus[],to:RideStatus,reason?:string) {

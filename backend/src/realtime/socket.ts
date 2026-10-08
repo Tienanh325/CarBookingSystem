@@ -47,10 +47,9 @@ export async function notifyRide(id: string, event = "ride.status.changed") {
   emitToUser(ride.customerId, event, payload);
   if (ride.driver) emitToUser(ride.driver.userId, event, payload);
   emitToRide(id, event, payload);
-  // Only send an invalidation signal to eligible drivers, never another customer's details.
-  const drivers = await prisma.driverProfile.findMany({ where: { verificationStatus: "APPROVED", onlineStatus: "ONLINE", vehicles: { some: { vehicleTypeId: ride.vehicleTypeId, isActive: true, registrationStatus: "APPROVED" } } }, select: { userId: true } });
-  const requestEvent = ride.status === "SEARCHING_DRIVER" ? "ride.request.created" : "ride.requests.changed";
-  drivers.forEach(d => emitToUser(d.userId, requestEvent, { rideId: id }));
+  // Only the driver holding the current persisted offer receives the request.
+  const offers = await prisma.driverOffer.findMany({ where: { rideId: id, status: "PENDING" }, include: { driver: { select: { userId: true } } } });
+  offers.forEach(offer => emitToUser(offer.driver.userId, "ride.requests.changed", { rideId: id }));
   emitAdmin();
 }
 export function revokeSockets(sessionId: string) { io?.in("session:" + sessionId).disconnectSockets(true); }

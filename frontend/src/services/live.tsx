@@ -19,7 +19,7 @@ export function LiveProvider({children}:{children:ReactNode}){
     client.on("connect",()=>{setConnected(true);changed();});
     client.on("disconnect",reason=>{setConnected(false);if(reason==="io server disconnect") void refreshSession().catch(()=>saveSession(null));});
     client.on("connect_error",error=>{setConnected(false);if(error.message==="AUTH_INVALID_TOKEN") void refreshSession().catch(()=>saveSession(null));});
-    ["data.changed","ride.request.created","ride.requests.changed","ride.accepted","ride.status.changed","ride.cancelled"].forEach(e=>client.on(e,changed));
+    ["data.changed","ride.request.created","ride.requests.changed","ride.offer.expired","ride.matching.started","ride.matching.updated","ride.scheduled","ride.no-driver","ride.accepted","ride.status.changed","ride.cancelled"].forEach(e=>client.on(e,changed));
     const timer=window.setInterval(changed,30000);
     const renew=window.setInterval(()=>void refreshSession().catch(()=>{}),10*60000);
     window.addEventListener("online",changed);

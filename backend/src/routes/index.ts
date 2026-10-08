@@ -9,6 +9,7 @@ import { promotionRouter } from "../modules/promotions/promotion.routes";
 import { prisma } from "../config/prisma";
 import { asyncHandler } from "../utils/async-handler";
 import { ok } from "../utils/response";
+import { mapRouter } from "../modules/maps/map.routes";
 
 export const apiRouter = Router();
 apiRouter.get("/vehicle-types", asyncHandler(async (_req, res) => {
@@ -19,6 +20,7 @@ apiRouter.use("/auth", authRouter);
 apiRouter.use("/customers", customerRouter);
 apiRouter.use("/drivers", driverRouter);
 apiRouter.use("/rides", rideRouter);
+apiRouter.use("/maps", mapRouter);
 apiRouter.use("/admin", adminRouter);
 apiRouter.use("/admin/pricing-rules", pricingRouter);
 apiRouter.use("/promotions", promotionRouter);

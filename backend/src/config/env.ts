@@ -24,7 +24,13 @@ export const env = {
   jwtRefreshSecret: process.env.JWT_REFRESH_SECRET ?? "dev-refresh-secret-change-me",
   jwtAccessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? "15m",
   jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? "7d",
-  otpExpiresMinutes: readNumber("OTP_EXPIRES_MINUTES", 5)
+  otpExpiresMinutes: readNumber("OTP_EXPIRES_MINUTES", 5),
+  routingBaseUrl: process.env.ROUTING_BASE_URL ?? "https://router.project-osrm.org",
+  mapboxAccessToken: process.env.MAPBOX_ACCESS_TOKEN,
+  geocodingBaseUrl: process.env.GEOCODING_BASE_URL ?? "https://photon.komoot.io",
+  matchingOfferSeconds: readNumber("MATCHING_OFFER_SECONDS", 20),
+  matchingLeadMinutes: readNumber("SCHEDULE_MATCH_LEAD_MINUTES", 30),
+  matchingMaxWaitSeconds: readNumber("MATCHING_MAX_WAIT_SECONDS", 180)
 };
 
 export const isProduction = env.nodeEnv === "production";

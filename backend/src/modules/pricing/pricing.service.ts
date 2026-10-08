@@ -1,9 +1,9 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma";
-import { haversineDistanceKm } from "../../utils/geo";
 import { ApiError } from "../../utils/api-error";
 import { calculateFare } from "./pricing.utils";
 import { validatePromotionForFare } from "../promotions/promotion.service";
+import { getRoadRoute } from "../../integrations/routing.service";
 
 function asNumber(value: unknown) {
   return Number(value);
@@ -12,8 +12,10 @@ function asNumber(value: unknown) {
 export async function estimateRide(input: {
   pickup: { address: string; lat: number; lng: number };
   dropoff: { address: string; lat: number; lng: number };
+  stops?: { address: string; lat: number; lng: number; dwellMinutes?: number }[];
   vehicleTypeId: string;
   promotionCode?: string;
+  scheduledAt?: Date;
 }, userId?: string, db: Prisma.TransactionClient = prisma as unknown as Prisma.TransactionClient) {
   const vehicleType = await db.vehicleType.findUnique({
     where: { id: input.vehicleTypeId }
@@ -34,14 +36,11 @@ export async function estimateRide(input: {
     orderBy: { activeFrom: "desc" }
   });
 
-  const distanceKm = Math.max(
-    1,
-    haversineDistanceKm(
-      { lat: input.pickup.lat, lng: input.pickup.lng },
-      { lat: input.dropoff.lat, lng: input.dropoff.lng }
-    ) * 1.2
-  );
-  const durationMin = Math.max(5, Math.ceil((distanceKm / 25) * 60));
+  const stops = input.stops ?? [];
+  const route = await getRoadRoute([input.pickup, ...stops, input.dropoff], input.scheduledAt);
+  const distanceKm = Math.max(1, route.distanceKm);
+  const dwellMinutes = stops.reduce((sum, stop) => sum + (stop.dwellMinutes ?? 5), 0);
+  const durationMin = route.durationMin + dwellMinutes;
 
   const rule = pricingRule
     ? {
@@ -59,7 +58,11 @@ export async function estimateRide(input: {
         peakMultiplier: 1
       };
 
-  const estimatedFare = calculateFare(rule, distanceKm, durationMin);
+  const stopFee = Math.round(stops.reduce(
+    (sum, stop) => sum + (stop.dwellMinutes ?? 5) * Number(pricingRule?.waitingFeePerMinute ?? 0),
+    0
+  ));
+  const estimatedFare = calculateFare(rule, distanceKm, route.durationMin) + stopFee;
   let discount = 0;
   let promotionId: string | undefined;
   let finalFare = estimatedFare;
@@ -78,7 +81,12 @@ export async function estimateRide(input: {
     estimatedFare,
     discount,
     finalFare,
-    promotionId
+    promotionId,
+    stopFee,
+    routeGeometry: route.geometry,
+    routeProvider: route.provider,
+    trafficAware: route.trafficAware,
+    legs: route.legs
   };
 }
 
