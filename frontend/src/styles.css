@@ -1059,6 +1059,19 @@ a {
 .qr-payment strong { font-size: 1.35rem; }
 .qr-payment code { overflow-wrap: anywhere; }
 
+.ride-pin {
+  padding: .75rem 1rem;
+  border: 1px dashed #087a55;
+  border-radius: 12px;
+  background: #effbf6;
+}
+
+.ride-pin strong {
+  margin-left: .4rem;
+  font-size: 1.3rem;
+  letter-spacing: .2em;
+}
+
 @media (max-width: 560px) {
   .qr-payment { grid-template-columns: 1fr; }
   .qr-payment img { max-width: 220px; margin: auto; }

@@ -8,6 +8,9 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty false",
+    "lint": "eslint src tests --max-warnings=0",
+    "format": "prettier --write \"{src,tests}/**/*.{ts,tsx}\" \"*.{json,md}\"",
+    "format:check": "prettier --check \"{src,tests}/**/*.{ts,tsx}\" \"*.{json,md}\"",
     "test:e2e": "playwright test",
     "capture:ui": "node scripts/capture-live-ui.mjs"
   },
@@ -22,13 +25,19 @@
     "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.63.0",
     "@types/leaflet": "^1.9.22",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
+    "eslint": "^10.12.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "prettier": "^3.9.10",
     "sharp": "^0.35.4",
-    "typescript": "^7.0.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.71.1",
     "vite": "^8.3.0"
   }
 }

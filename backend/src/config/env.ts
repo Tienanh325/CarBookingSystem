@@ -16,7 +16,10 @@ export const env = {
   appName: process.env.APP_NAME ?? "Ride Booking Backend",
   port: readNumber("PORT", 4000),
   appOrigin,
-  appOrigins: appOrigin.split(",").map((origin) => origin.trim()).filter(Boolean),
+  appOrigins: appOrigin
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
   apiRateLimit: readNumber("API_RATE_LIMIT", 600),
   databaseUrl: process.env.DATABASE_URL,
   redisUrl: process.env.REDIS_URL,
@@ -31,6 +34,10 @@ export const env = {
   matchingOfferSeconds: readNumber("MATCHING_OFFER_SECONDS", 20),
   matchingLeadMinutes: readNumber("SCHEDULE_MATCH_LEAD_MINUTES", 30),
   matchingMaxWaitSeconds: readNumber("MATCHING_MAX_WAIT_SECONDS", 180),
+  waitingGraceMinutes: readNumber("WAITING_GRACE_MINUTES", 5),
+  cancelFeeAfterAccept: readNumber("CANCEL_FEE_AFTER_ACCEPT", 10_000),
+  cancelFeeAfterArrived: readNumber("CANCEL_FEE_AFTER_ARRIVED", 20_000),
+  rideStartPinSecret: process.env.RIDE_START_PIN_SECRET ?? "dev-ride-pin-secret-change-me",
   platformCommissionRate: readNumber("PLATFORM_COMMISSION_RATE", 0.2),
   vietQrBankBin: process.env.VIETQR_BANK_BIN ?? "970422",
   vietQrAccountNumber: process.env.VIETQR_ACCOUNT_NUMBER ?? "0000000000",
@@ -56,5 +63,8 @@ if (isProduction) {
   }
   if (env.vietQrWebhookSecret.length < 32 || env.vietQrWebhookSecret.includes("change-me")) {
     throw new Error("VIETQR_WEBHOOK_SECRET must be a strong production secret");
+  }
+  if (env.rideStartPinSecret.length < 32 || env.rideStartPinSecret.includes("change-me")) {
+    throw new Error("RIDE_START_PIN_SECRET must be a strong production secret");
   }
 }

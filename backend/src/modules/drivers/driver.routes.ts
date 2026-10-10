@@ -7,6 +7,7 @@ import {
   driverCancelRideSchema,
   registerDriverSchema,
   rideParamSchema,
+  startRideSchema,
   updateDriverSchema,
   updateLocationSchema
 } from "./driver.schemas";
@@ -29,12 +30,25 @@ driverRouter.post("/me/location", validate({ body: updateLocationSchema }), cont
 driverRouter.get("/me/ride-requests", controller.listRideRequests);
 driverRouter.get("/me/earnings", controller.getEarnings);
 driverRouter.get("/me/wallet", walletController.getDriverWallet);
-driverRouter.post("/me/withdrawals", validate({ body: createWithdrawalSchema }), walletController.createWithdrawal);
+driverRouter.post(
+  "/me/withdrawals",
+  validate({ body: createWithdrawalSchema }),
+  walletController.createWithdrawal
+);
 
 driverRouter.post("/rides/:id/accept", validate({ params: rideParamSchema }), controller.acceptRide);
 driverRouter.post("/rides/:id/reject", validate({ params: rideParamSchema }), controller.rejectRide);
+driverRouter.post(
+  "/rides/:id/heading",
+  validate({ params: rideParamSchema }),
+  controller.markHeadingToPickup
+);
 driverRouter.post("/rides/:id/arrived", validate({ params: rideParamSchema }), controller.markArrived);
-driverRouter.post("/rides/:id/start", validate({ params: rideParamSchema }), controller.startRide);
+driverRouter.post(
+  "/rides/:id/start",
+  validate({ params: rideParamSchema, body: startRideSchema }),
+  controller.startRide
+);
 driverRouter.post("/rides/:id/complete", validate({ params: rideParamSchema }), controller.completeRide);
 driverRouter.post(
   "/rides/:id/cancel",

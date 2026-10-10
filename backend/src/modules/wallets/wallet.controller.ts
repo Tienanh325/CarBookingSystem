@@ -8,7 +8,11 @@ export const getCustomerWallet = asyncHandler(async (req: Request, res: Response
 });
 
 export const createTopUp = asyncHandler(async (req: Request, res: Response) => {
-  res.status(201).json(created(await service.createTopUp(req.auth!.userId, req.body.amount), "Tao ma nap tien thanh cong"));
+  res
+    .status(201)
+    .json(
+      created(await service.createTopUp(req.auth!.userId, req.body.amount), "Tao ma nap tien thanh cong")
+    );
 });
 
 export const getDriverWallet = asyncHandler(async (req: Request, res: Response) => {
@@ -16,7 +20,11 @@ export const getDriverWallet = asyncHandler(async (req: Request, res: Response) 
 });
 
 export const createWithdrawal = asyncHandler(async (req: Request, res: Response) => {
-  res.status(201).json(created(await service.createWithdrawal(req.auth!.userId, req.body), "Tao yeu cau rut tien thanh cong"));
+  res
+    .status(201)
+    .json(
+      created(await service.createWithdrawal(req.auth!.userId, req.body), "Tao yeu cau rut tien thanh cong")
+    );
 });
 
 export const listWithdrawals = asyncHandler(async (req: Request, res: Response) => {
@@ -24,9 +32,19 @@ export const listWithdrawals = asyncHandler(async (req: Request, res: Response) 
 });
 
 export const approveWithdrawal = asyncHandler(async (req: Request, res: Response) => {
-  res.json(ok(await service.reviewWithdrawal(req.params.id as string, req.auth!.userId, true), "Duyet rut tien thanh cong"));
+  res.json(
+    ok(
+      await service.reviewWithdrawal(req.params.id as string, req.auth!.userId, true),
+      "Duyet rut tien thanh cong"
+    )
+  );
 });
 
 export const rejectWithdrawal = asyncHandler(async (req: Request, res: Response) => {
-  res.json(ok(await service.reviewWithdrawal(req.params.id as string, req.auth!.userId, false, req.body.reason), "Tu choi rut tien thanh cong"));
+  res.json(
+    ok(
+      await service.reviewWithdrawal(req.params.id as string, req.auth!.userId, false, req.body.reason),
+      "Tu choi rut tien thanh cong"
+    )
+  );
 });

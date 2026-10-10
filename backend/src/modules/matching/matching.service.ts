@@ -19,13 +19,20 @@ export async function activateScheduledRides() {
     select: { id: true, customerId: true }
   });
   for (const ride of scheduled) {
-    const activated = await prisma.$transaction(async tx => {
+    const activated = await prisma.$transaction(async (tx) => {
       const changed = await tx.ride.updateMany({
         where: { id: ride.id, status: "SCHEDULED" },
         data: { status: "SEARCHING_DRIVER", matchingStartedAt: new Date() }
       });
       if (!changed.count) return false;
-      await tx.rideStatusLog.create({ data: { rideId: ride.id, fromStatus: "SCHEDULED", toStatus: "SEARCHING_DRIVER", note: `Bat dau dieu phoi truoc ${env.matchingLeadMinutes} phut` } });
+      await tx.rideStatusLog.create({
+        data: {
+          rideId: ride.id,
+          fromStatus: "SCHEDULED",
+          toStatus: "SEARCHING_DRIVER",
+          note: `Bat dau dieu phoi truoc ${env.matchingLeadMinutes} phut`
+        }
+      });
       return true;
     });
     if (activated) {
@@ -42,10 +49,10 @@ async function expirePendingOffers(rideId: string) {
   });
   if (!expired.length) return;
   await prisma.driverOffer.updateMany({
-    where: { id: { in: expired.map(offer => offer.id) }, status: "PENDING" },
+    where: { id: { in: expired.map((offer) => offer.id) }, status: "PENDING" },
     data: { status: "EXPIRED", respondedAt: new Date() }
   });
-  expired.forEach(offer => emitToUser(offer.driver.userId, "ride.offer.expired", { rideId }));
+  expired.forEach((offer) => emitToUser(offer.driver.userId, "ride.offer.expired", { rideId }));
 }
 
 export async function dispatchRide(rideId: string) {
@@ -55,38 +62,52 @@ export async function dispatchRide(rideId: string) {
     include: { offers: true }
   });
   if (!ride || ride.status !== "SEARCHING_DRIVER" || ride.driverId) return;
-  if (ride.offers.some(offer => offer.status === "PENDING" && offer.expiresAt > new Date())) return;
+  if (ride.offers.some((offer) => offer.status === "PENDING" && offer.expiresAt > new Date())) return;
 
   const candidates = await prisma.driverProfile.findMany({
     where: {
       verificationStatus: "APPROVED",
       onlineStatus: "ONLINE",
       location: { isNot: null },
-      vehicles: { some: { vehicleTypeId: ride.vehicleTypeId, isActive: true, registrationStatus: "APPROVED" } },
+      vehicles: {
+        some: { vehicleTypeId: ride.vehicleTypeId, isActive: true, registrationStatus: "APPROVED" }
+      },
       offers: { none: { rideId } }
     },
     include: { location: true, user: { select: { id: true } } }
   });
 
-  const ranked = candidates.flatMap(driver => {
-    if (!driver.location) return [];
-    const distanceKm = haversineDistanceKm(
-      { lat: Number(ride.pickupLat), lng: Number(ride.pickupLng) },
-      { lat: Number(driver.location.lat), lng: Number(driver.location.lng) }
-    );
-    return [{ driver, distanceKm }];
-  }).sort((a, b) => a.distanceKm - b.distanceKm);
+  const ranked = candidates
+    .flatMap((driver) => {
+      if (!driver.location) return [];
+      const distanceKm = haversineDistanceKm(
+        { lat: Number(ride.pickupLat), lng: Number(ride.pickupLng) },
+        { lat: Number(driver.location.lat), lng: Number(driver.location.lng) }
+      );
+      return [{ driver, distanceKm }];
+    })
+    .sort((a, b) => a.distanceKm - b.distanceKm);
 
   const startedAt = ride.matchingStartedAt ?? ride.requestedAt;
   const waitedSeconds = (Date.now() - startedAt.getTime()) / 1000;
   const radiusKm = matchingRadiusForWait(waitedSeconds);
-  const selected = ranked.find(candidate => candidate.distanceKm <= radiusKm);
+  const selected = ranked.find((candidate) => candidate.distanceKm <= radiusKm);
   if (!selected) {
     if (waitedSeconds >= env.matchingMaxWaitSeconds) {
       const changed = await prisma.$transaction(async (tx) => {
-        const result = await tx.ride.updateMany({ where: { id: rideId, status: "SEARCHING_DRIVER", driverId: null }, data: { status: "NO_DRIVER_FOUND" } });
+        const result = await tx.ride.updateMany({
+          where: { id: rideId, status: "SEARCHING_DRIVER", driverId: null },
+          data: { status: "NO_DRIVER_FOUND" }
+        });
         if (!result.count) return false;
-        await tx.rideStatusLog.create({ data: { rideId, fromStatus: "SEARCHING_DRIVER", toStatus: "NO_DRIVER_FOUND", note: "Khong co tai xe trong ban kinh 5 km" } });
+        await tx.rideStatusLog.create({
+          data: {
+            rideId,
+            fromStatus: "SEARCHING_DRIVER",
+            toStatus: "NO_DRIVER_FOUND",
+            note: "Khong co tai xe trong ban kinh 5 km"
+          }
+        });
         await tx.promotionUsage.deleteMany({ where: { rideId } });
         await refundCustomerWalletRide(tx, rideId);
         return true;
@@ -126,7 +147,11 @@ async function tick() {
   processing = true;
   try {
     await activateScheduledRides();
-    const rides = await prisma.ride.findMany({ where: { status: "SEARCHING_DRIVER", driverId: null }, select: { id: true }, take: 50 });
+    const rides = await prisma.ride.findMany({
+      where: { status: "SEARCHING_DRIVER", driverId: null },
+      select: { id: true },
+      take: 50
+    });
     for (const ride of rides) await dispatchRide(ride.id);
   } catch (error) {
     console.error("Ride matching worker failed", error);

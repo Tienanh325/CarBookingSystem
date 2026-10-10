@@ -31,6 +31,15 @@ De phu hop do an va de trien khai chac chan, co the dung:
 | payments | Giao dich thanh toan |
 | driver_wallets | Vi/so du tai xe |
 | wallet_transactions | Bien dong so du |
+| customer_wallets | So du vi khach hang |
+| customer_wallet_transactions | So cai vi khach hang |
+| wallet_top_ups | Lenh nap tien VietQR |
+| withdrawal_requests | Yeu cau rut tien tai xe |
+| payment_webhook_events | Chong trung va audit IPN |
+| surcharge_rules | Cau hinh phu phi linh hoat |
+| pricing_contexts | Trang thai thoi tiet tinh gia |
+| ride_location_points | Mau GPS trong chuyen |
+| invoices | Hoa don cuoc xe |
 | ratings | Danh gia chuyen di |
 | support_tickets | Khieu nai/ho tro |
 | notifications | Thong bao |
@@ -102,6 +111,13 @@ De phu hop do an va de trien khai chac chan, co the dung:
 | estimated_duration_min | INT | Thoi gian uoc tinh |
 | estimated_fare | DECIMAL | Gia uoc tinh |
 | final_fare | DECIMAL NULL | Gia cuoi cung |
+| actual_distance_km | DECIMAL NULL | Quang duong sau loc GPS |
+| actual_duration_min | INT NULL | Thoi gian tu START den COMPLETE |
+| waiting_minutes | INT | Thoi gian tai xe cho tai diem don |
+| waiting_fee | DECIMAL | Phi cho sau grace period |
+| cancellation_fee | DECIMAL | Phi huy theo trang thai |
+| pricing_snapshot | JSON | Cong thuc gia tai luc dat xe |
+| fare_breakdown | JSON | Chi tiet gia cuoi cung |
 | promotion_id | UUID NULL | Ma khuyen mai |
 | payment_method | ENUM | CASH, CARD, WALLET |
 | status | ENUM | Trang thai chuyen |
@@ -120,7 +136,7 @@ De phu hop do an va de trien khai chac chan, co the dung:
 | ride_id | CHAR(36) FK rides.id | Chuyen di |
 | customer_id | CHAR(36) FK users.id | Nguoi tra |
 | amount | DECIMAL | So tien |
-| method | ENUM | CASH, CARD, WALLET |
+| method | ENUM | CASH, CARD, WALLET, VIETQR |
 | provider | VARCHAR NULL | Cong thanh toan |
 | provider_transaction_id | VARCHAR NULL | Ma giao dich ngoai |
 | status | ENUM | PENDING, PAID, FAILED, REFUNDED |
@@ -144,6 +160,10 @@ rides 1--1 ratings
 promotions 1--N promotion_usages
 driver_profiles 1--1 driver_wallets
 driver_wallets 1--N wallet_transactions
+users 1--1 customer_wallets
+customer_wallets 1--N customer_wallet_transactions
+rides 1--N ride_location_points
+rides 1--1 invoices
 users 1--N auth_sessions
 rides N--N driver_profiles qua ride_rejections
 ```

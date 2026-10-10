@@ -6,7 +6,9 @@ He thong dat xe va quan ly van hanh online tuong tu Xanh SM. Workspace da co bac
 
 - Backend modular monolith: Express 5, TypeScript, Prisma, MySQL.
 - Access token + refresh session luu database, RBAC va thu hoi socket khi logout.
-- Tinh gia, tao/huy chuyen, tai xe nhan chuyen, state machine, payment tien mat va rating.
+- Tinh gia, lich hen, matching theo ban kinh, PIN bat dau, GPS thuc te, phi cho/huy, hoa don va rating.
+- Thanh toan CASH/VietQR/GoRide Wallet, IPN idempotent, hoa hong va quy trinh rut tien.
+- Phu phi linh hoat theo khung gio va tinh trang thoi tiet.
 - Duyet tai xe, quan ly user/chuyen, bang gia, khuyen mai, payment va dashboard doanh thu.
 - Realtime request/status/location qua Socket.IO voi room duoc phan quyen.
 - Frontend responsive desktop/mobile; khong con demo data fallback.
@@ -38,6 +40,7 @@ npm run dev -- --host 127.0.0.1
 - Web: `http://127.0.0.1:5173`
 - API: `http://localhost:4000/api`
 - Readiness: `http://localhost:4000/ready`
+- OpenAPI/Swagger: `http://localhost:4000/api-docs`
 - Admin local: `0900000000` / `Admin@123456`
 
 MySQL rieng cua project chay tai `127.0.0.1:3307`, data nam trong `.local/mysql` va khong anh huong service MySQL tai `3306`.
@@ -47,6 +50,8 @@ MySQL rieng cua project chay tai `127.0.0.1:3307`, data nam trong `.local/mysql`
 ```powershell
 cd backend
 npm run typecheck
+npm run lint
+npm run format:check
 npm test
 npm run build
 npm run verify:live
@@ -70,7 +75,7 @@ npm run test:e2e
 
 ## Gioi han hien tai
 
-- Payment that moi ho tro `CASH`; CARD/WALLET bi tu choi den khi co provider.
-- Quang duong va thoi gian dang uoc tinh theo toa do, chua co routing/traffic provider.
-- OTP SMS, push notification, object storage va Redis la cac tich hop production tiep theo.
-- OpenStreetMap public tile can Internet; khi tile loi, toa do va nghiep vu van hoat dong.
+- VietQR da co QR va IPN HMAC, nhung production can adapter/doi soat theo nha cung cap ngan hang thuc te.
+- GPS chi lay mau khi tai xe cap nhat vi tri; diem nhay bat hop ly duoc loai va fallback ve uoc tinh.
+- OTP SMS, push notification, object storage va Redis/queue la cac tich hop production tiep theo.
+- OSRM, Photon va OpenStreetMap public phu hop demo; production nen dung provider/instance co SLA.

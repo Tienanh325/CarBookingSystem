@@ -30,7 +30,7 @@ Module de xuat:
 | Realtime | WebSocket/Socket.IO |
 | Auth | JWT + Refresh Token |
 | Map | Leaflet + OpenStreetMap; routing provider la phase sau |
-| Payment | CASH hien tai; VNPay/MoMo/ZaloPay la phase sau |
+| Payment | CASH, GoRide Wallet, VietQR/IPN HMAC |
 | Storage | S3-compatible/Object Storage |
 | Logging | Winston/Pino, ELK/OpenSearch tuy quy mo |
 
@@ -68,6 +68,7 @@ Module de xuat:
 | GET | `/api/rides?as=customer|driver` | Lich su chuyen theo vai tro |
 | POST | `/api/rides/{id}/cancel` | Huy chuyen |
 | POST | `/api/rides/{id}/rating` | Danh gia chuyen |
+| GET | `/api/rides/{id}/invoice` | Hoa don chuyen hoan thanh |
 
 Vi du request tao chuyen:
 
@@ -103,10 +104,13 @@ Vi du request tao chuyen:
 | POST | `/api/drivers/rides/{id}/accept` | Chap nhan chuyen |
 | POST | `/api/drivers/rides/{id}/reject` | Tu choi chuyen |
 | POST | `/api/drivers/rides/{id}/arrived` | Bao da den diem don |
-| POST | `/api/drivers/rides/{id}/start` | Bat dau chuyen |
+| POST | `/api/drivers/rides/{id}/heading` | Dang di den diem don |
+| POST | `/api/drivers/rides/{id}/start` | Xac minh PIN va bat dau chuyen |
 | POST | `/api/drivers/rides/{id}/complete` | Hoan thanh chuyen |
 | POST | `/api/drivers/rides/{id}/cancel` | Tai xe huy chuyen |
 | GET | `/api/drivers/me/earnings` | Xem thu nhap |
+| GET | `/api/drivers/me/wallet` | Bang ke vi tai xe |
+| POST | `/api/drivers/me/withdrawals` | Tao yeu cau rut tien |
 
 ### 3.5 Admin API
 
@@ -124,6 +128,9 @@ Vi du request tao chuyen:
 | POST | `/api/admin/rides/{id}/cancel` | Admin huy chuyen |
 | GET | `/api/admin/payments` | Danh sach thanh toan |
 | GET | `/api/admin/reports/revenue` | Bao cao doanh thu |
+| GET | `/api/admin/withdrawals` | Danh sach yeu cau rut |
+| POST | `/api/admin/withdrawals/{id}/approve` | Duyet rut tien |
+| POST | `/api/admin/withdrawals/{id}/reject` | Tu choi rut tien |
 
 ### 3.6 Pricing/Promotion API
 
@@ -136,6 +143,10 @@ Vi du request tao chuyen:
 | POST | `/api/admin/promotions` | Tao khuyen mai |
 | PATCH | `/api/admin/promotions/{id}` | Cap nhat khuyen mai |
 | POST | `/api/promotions/validate` | Kiem tra ma khuyen mai |
+| GET/POST/PATCH | `/api/admin/surcharges` | Quan ly phu phi |
+| PATCH | `/api/admin/surcharges/context/weather` | Cap nhat thoi tiet |
+
+OpenAPI 3.1 duoc phuc vu tai `/openapi.json`; Swagger UI tai `/api-docs`.
 
 ## 4. WebSocket/Reatime events
 
@@ -146,6 +157,9 @@ Vi du request tao chuyen:
 | `ride.accepted` | Backend | Customer | Tai xe da nhan |
 | `ride.status.changed` | Backend | Customer/Driver/Admin | Trang thai chuyen thay doi |
 | `ride.cancelled` | Backend | Customer/Driver | Chuyen bi huy |
+| `ride.driver-reassigned` | Backend | Customer/Driver | Tai xe huy, he thong matching lai |
+| `payment.updated` | Backend | Customer | IPN cap nhat thanh toan |
+| `wallet.updated` | Backend | Customer | So du vi thay doi |
 | `data.changed` | Backend | Admin | Vo hieu hoa cache man hinh van hanh |
 
 ## 5. Logic matching tai xe

@@ -14,17 +14,30 @@ export const createRide = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const getCurrentRide = asyncHandler(async (req: Request, res: Response) => {
-  const data = await service.getCurrentRide(req.auth!.userId, req.auth!.roles, req.query.as as "customer" | "driver" | undefined);
+  const data = await service.getCurrentRide(
+    req.auth!.userId,
+    req.auth!.roles,
+    req.query.as as "customer" | "driver" | undefined
+  );
   res.json(ok(data));
 });
 
 export const listRides = asyncHandler(async (req: Request, res: Response) => {
-  const data = await service.listRides(req.auth!.userId, req.auth!.roles, req.query.as as "customer" | "driver" | undefined);
+  const data = await service.listRides(
+    req.auth!.userId,
+    req.auth!.roles,
+    req.query.as as "customer" | "driver" | undefined
+  );
   res.json(ok(data));
 });
 
 export const getRideById = asyncHandler(async (req: Request, res: Response) => {
   const data = await service.getRideById(req.params.id as string, req.auth!.userId, req.auth!.roles);
+  res.json(ok(data));
+});
+
+export const getRideInvoice = asyncHandler(async (req: Request, res: Response) => {
+  const data = await service.getRideInvoice(req.params.id as string, req.auth!.userId, req.auth!.roles);
   res.json(ok(data));
 });
 

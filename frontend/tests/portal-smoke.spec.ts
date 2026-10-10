@@ -20,9 +20,7 @@ async function ensureUser(request: APIRequestContext, phone: string, fullName: s
     data: { phone, fullName, password }
   });
   if (registered.ok()) return apiData<AuthResult>(registered);
-  return apiData<AuthResult>(
-    await request.post(`${apiUrl}/auth/login`, { data: { phone, password } })
-  );
+  return apiData<AuthResult>(await request.post(`${apiUrl}/auth/login`, { data: { phone, password } }));
 }
 
 async function adminAuth(request: APIRequestContext) {
@@ -70,9 +68,7 @@ async function ensureDriver(request: APIRequestContext, phone: string, suffix: s
       data: {}
     })
   );
-  auth = await apiData<AuthResult>(
-    await request.post(`${apiUrl}/auth/login`, { data: { phone, password } })
-  );
+  auth = await apiData<AuthResult>(await request.post(`${apiUrl}/auth/login`, { data: { phone, password } }));
   await apiData(
     await request.post(`${apiUrl}/drivers/me/location`, {
       headers: headers(auth),
@@ -123,6 +119,8 @@ test("customer uses MySQL vehicle data and receives a fare estimate", async ({ p
 
   await expect(page.getByText(/Giá dự kiến/)).toBeVisible();
   await expect(page.locator(".booking-submit")).toHaveText(/Đặt xe/);
+  await page.getByRole("button", { name: "Ví", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "GoRide Wallet" })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });
 
@@ -143,10 +141,21 @@ test("approved driver can switch online through the real API", async ({ page, re
 
 test("admin loads every operational screen from backend data", async ({ page }) => {
   await login(page, "0900000000", "Admin@123456");
-  await expect(page.getByRole("heading", { name: "Tổng quan", exact: true })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole("heading", { name: "Tổng quan", exact: true })).toBeVisible({
+    timeout: 10_000
+  });
   await expect(page.getByTitle("Cập nhật trực tiếp")).toBeVisible({ timeout: 8_000 });
 
-  for (const section of ["Chuyến đi", "Tài xế", "Bảng giá", "Khuyến mãi", "Tài khoản", "Thanh toán"]) {
+  for (const section of [
+    "Chuyến đi",
+    "Tài xế",
+    "Bảng giá",
+    "Phụ phí",
+    "Khuyến mãi",
+    "Tài khoản",
+    "Thanh toán",
+    "Rút tiền"
+  ]) {
     await page.getByRole("button", { name: section, exact: true }).click();
     await expect(page.locator("h1", { hasText: section })).toBeVisible();
   }

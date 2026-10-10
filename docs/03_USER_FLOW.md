@@ -13,10 +13,14 @@ Mo app/web
   -> Xac nhan dat xe
   -> He thong tim tai xe
   -> Tai xe chap nhan
+  -> Tai xe chon "Dang den diem don"
   -> Theo doi tai xe den diem don
+  -> Khach cung cap PIN 4 so
   -> Bat dau chuyen di
   -> Ket thuc chuyen di
+  -> Tinh lai gia theo GPS, thoi gian va phi cho thuc te
   -> Thanh toan
+  -> Phat hanh hoa don
   -> Danh gia
   -> Xem hoa don/lich su
 ```
@@ -76,8 +80,9 @@ Customer bam huy chuyen
 Driver bam huy chuyen
   -> Chon ly do huy
   -> He thong ghi nhan su kien
-  -> Cap nhat diem uy tin neu can
-  -> Tim tai xe thay the hoac huy chuyen
+  -> Dua chuyen ve SEARCHING_DRIVER
+  -> Loai tai xe vua huy khoi cac vong matching cua chuyen
+  -> Tim tai xe thay the
   -> Thong bao cho customer
 ```
 
@@ -85,7 +90,9 @@ Driver bam huy chuyen
 
 ```text
 Chuyen hoan thanh
-  -> Backend tinh gia cuoi cung
+  -> Backend loc diem GPS bat hop ly
+  -> Tinh quang duong, thoi gian va thoi gian cho thuc te
+  -> Backend tinh gia cuoi cung theo pricing snapshot luc dat xe
   -> Ap phi phat sinh/phu phi/khuyen mai
   -> Tao payment transaction
   -> Neu tien mat:
@@ -97,6 +104,16 @@ Chuyen hoan thanh
       -> Cap nhat PAID/FAILED
   -> Tao hoa don
   -> Cap nhat thu nhap tai xe
+```
+
+## 5.1 Flow hủy và phí hủy
+
+```text
+SCHEDULED/SEARCHING_DRIVER -> mien phi
+ACCEPTED/DRIVER_ARRIVING -> phi huy sau khi tai xe nhan
+ARRIVED -> phi huy tai diem don
+WALLET/VIETQR da thanh toan -> hoan phan chenh lech vao GoRide Wallet
+CASH/chua thanh toan -> tao payment PENDING cho phi huy
 ```
 
 ## 6. Flow admin duyet tai xe

@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: ride_booking
+          MYSQL_USER: ride_booking
+          MYSQL_PASSWORD: ride_booking
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -uroot -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      DATABASE_URL: mysql://ride_booking:ride_booking@127.0.0.1:3306/ride_booking
+      JWT_ACCESS_SECRET: ci-access-secret-at-least-thirty-two-characters
+      JWT_REFRESH_SECRET: ci-refresh-secret-at-least-thirty-two-characters
+      VIETQR_WEBHOOK_SECRET: ci-vietqr-secret-at-least-thirty-two-characters
+      RIDE_START_PIN_SECRET: ci-ride-pin-secret-at-least-thirty-two-characters
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      - name: Backend dependencies
+        working-directory: backend
+        run: npm ci
+      - name: Validate and migrate database
+        working-directory: backend
+        run: |
+          npx prisma validate
+          npm run prisma:deploy
+          npm run db:seed
+      - name: Backend quality
+        working-directory: backend
+        run: |
+          npm run format:check
+          npm run lint
+          npm run typecheck
+          npm test
+          npm run build
+      - name: Frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Frontend quality
+        working-directory: frontend
+        run: |
+          npm run format:check
+          npm run lint
+          npm run typecheck
+          npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: ride_booking
+          MYSQL_USER: ride_booking
+          MYSQL_PASSWORD: ride_booking
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -uroot -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      DATABASE_URL: mysql://ride_booking:ride_booking@127.0.0.1:3306/ride_booking
+      JWT_ACCESS_SECRET: ci-access-secret-at-least-thirty-two-characters
+      JWT_REFRESH_SECRET: ci-refresh-secret-at-least-thirty-two-characters
+      VIETQR_WEBHOOK_SECRET: ci-vietqr-secret-at-least-thirty-two-characters
+      RIDE_START_PIN_SECRET: ci-ride-pin-secret-at-least-thirty-two-characters
+      DEFAULT_ADMIN_PHONE: 0900000000
+      DEFAULT_ADMIN_PASSWORD: Admin@123456
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      - run: npm ci
+        working-directory: backend
+      - run: npm run prisma:deploy && npm run db:seed
+        working-directory: backend
+      - run: npm ci
+        working-directory: frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - run: npm run test:e2e
+        working-directory: frontend

@@ -17,5 +17,7 @@ export const createPricingRule = asyncHandler(async (req: Request, res: Response
 });
 
 export const updatePricingRule = asyncHandler(async (req: Request, res: Response) => {
-  res.json(ok(await service.updatePricingRule(req.params.id as string, req.body), "Cap nhat cau hinh gia thanh cong"));
+  res.json(
+    ok(await service.updatePricingRule(req.params.id as string, req.body), "Cap nhat cau hinh gia thanh cong")
+  );
 });

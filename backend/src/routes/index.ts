@@ -14,9 +14,14 @@ import { paymentRouter } from "../modules/payments/payment.routes";
 import { surchargeRouter } from "../modules/pricing/surcharge.routes";
 
 export const apiRouter = Router();
-apiRouter.get("/vehicle-types", asyncHandler(async (_req, res) => {
-  res.json(ok(await prisma.vehicleType.findMany({ where: { isActive: true }, orderBy: { capacity: "asc" } })));
-}));
+apiRouter.get(
+  "/vehicle-types",
+  asyncHandler(async (_req, res) => {
+    res.json(
+      ok(await prisma.vehicleType.findMany({ where: { isActive: true }, orderBy: { capacity: "asc" } }))
+    );
+  })
+);
 
 apiRouter.use("/auth", authRouter);
 apiRouter.use("/customers", customerRouter);

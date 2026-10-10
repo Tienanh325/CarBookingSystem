@@ -24,5 +24,7 @@ export const createPromotion = asyncHandler(async (req: Request, res: Response) 
 });
 
 export const updatePromotion = asyncHandler(async (req: Request, res: Response) => {
-  res.json(ok(await service.updatePromotion(req.params.id as string, req.body), "Cap nhat khuyen mai thanh cong"));
+  res.json(
+    ok(await service.updatePromotion(req.params.id as string, req.body), "Cap nhat khuyen mai thanh cong")
+  );
 });

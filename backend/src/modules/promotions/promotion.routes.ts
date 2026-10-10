@@ -6,4 +6,9 @@ import * as controller from "./promotion.controller";
 
 export const promotionRouter = Router();
 
-promotionRouter.post("/validate", requireAuth, validate({ body: validatePromotionSchema }), controller.validatePromotion);
+promotionRouter.post(
+  "/validate",
+  requireAuth,
+  validate({ body: validatePromotionSchema }),
+  controller.validatePromotion
+);

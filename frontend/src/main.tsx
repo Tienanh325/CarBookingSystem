@@ -10,7 +10,9 @@ import "./live.css";
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
-      <LiveProvider><App /></LiveProvider>
+      <LiveProvider>
+        <App />
+      </LiveProvider>
     </BrowserRouter>
   </StrictMode>
 );

@@ -12,7 +12,7 @@ let lastRequest = 0;
 let requestQueue = Promise.resolve();
 
 function wait(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function formatAddress(properties: Record<string, unknown>) {
@@ -23,23 +23,28 @@ function formatAddress(properties: Record<string, unknown>) {
     properties.city,
     properties.state,
     properties.country
-  ].filter(Boolean).map(String);
+  ]
+    .filter(Boolean)
+    .map(String);
   return [...new Set(parts)].join(", ");
 }
 
 function parseFeatures(payload: { features?: PhotonFeature[] }): GeocodingResult[] {
   return (payload.features ?? []).flatMap((feature, index) => {
     const [lng, lat] = feature.geometry?.coordinates ?? [];
-    if (typeof lat !== "number" || typeof lng !== "number" || !Number.isFinite(lat) || !Number.isFinite(lng)) return [];
+    if (typeof lat !== "number" || typeof lng !== "number" || !Number.isFinite(lat) || !Number.isFinite(lng))
+      return [];
     const properties = feature.properties ?? {};
     const address = formatAddress(properties);
     if (!address) return [];
-    return [{
-      id: String(properties.osm_id ?? `${lat}-${lng}-${index}`),
-      address,
-      lat,
-      lng
-    }];
+    return [
+      {
+        id: String(properties.osm_id ?? `${lat}-${lng}-${index}`),
+        address,
+        lat,
+        lng
+      }
+    ];
   });
 }
 
@@ -55,7 +60,10 @@ async function throttledFetch(url: URL) {
     if (!response.ok) throw new Error(`Geocoding provider failed (${response.status})`);
     return response.json() as Promise<{ features?: PhotonFeature[] }>;
   });
-  requestQueue = task.then(() => undefined, () => undefined);
+  requestQueue = task.then(
+    () => undefined,
+    () => undefined
+  );
   return task;
 }
 
@@ -81,5 +89,12 @@ export async function reverseAddress(lat: number, lng: number) {
   url.searchParams.set("lat", String(lat));
   url.searchParams.set("lon", String(lng));
   url.searchParams.set("limit", "1");
-  return parseFeatures(await throttledFetch(url))[0] ?? { id: `${lat}-${lng}`, address: `${lat.toFixed(6)}, ${lng.toFixed(6)}`, lat, lng };
+  return (
+    parseFeatures(await throttledFetch(url))[0] ?? {
+      id: `${lat}-${lng}`,
+      address: `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
+      lat,
+      lng
+    }
+  );
 }

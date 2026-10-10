@@ -41,19 +41,42 @@ export const rejectRide = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const markArrived = asyncHandler(async (req: Request, res: Response) => {
-  res.json(ok(await service.markArrived(req.auth!.userId, req.params.id as string), "Da cap nhat den diem don"));
+  res.json(
+    ok(await service.markArrived(req.auth!.userId, req.params.id as string), "Da cap nhat den diem don")
+  );
+});
+
+export const markHeadingToPickup = asyncHandler(async (req: Request, res: Response) => {
+  res.json(
+    ok(
+      await service.markHeadingToPickup(req.auth!.userId, req.params.id as string),
+      "Tai xe dang den diem don"
+    )
+  );
 });
 
 export const startRide = asyncHandler(async (req: Request, res: Response) => {
-  res.json(ok(await service.startRide(req.auth!.userId, req.params.id as string), "Bat dau chuyen thanh cong"));
+  res.json(
+    ok(
+      await service.startRide(req.auth!.userId, req.params.id as string, req.body.pin),
+      "Bat dau chuyen thanh cong"
+    )
+  );
 });
 
 export const completeRide = asyncHandler(async (req: Request, res: Response) => {
-  res.json(ok(await service.completeRide(req.auth!.userId, req.params.id as string), "Hoan thanh chuyen thanh cong"));
+  res.json(
+    ok(await service.completeRide(req.auth!.userId, req.params.id as string), "Hoan thanh chuyen thanh cong")
+  );
 });
 
 export const cancelRide = asyncHandler(async (req: Request, res: Response) => {
-  res.json(ok(await service.cancelRide(req.auth!.userId, req.params.id as string, req.body.reason), "Huy chuyen thanh cong"));
+  res.json(
+    ok(
+      await service.cancelRide(req.auth!.userId, req.params.id as string, req.body.reason),
+      "Da chuyen cuoc sang tim tai xe khac"
+    )
+  );
 });
 
 export const getEarnings = asyncHandler(async (req: Request, res: Response) => {

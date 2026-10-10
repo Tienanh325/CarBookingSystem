@@ -1,4 +1,10 @@
-import { DriverOnlineStatus, DriverVerificationStatus, PaymentStatus, RideStatus, VehicleRegistrationStatus } from "@prisma/client";
+import {
+  DriverOnlineStatus,
+  DriverVerificationStatus,
+  PaymentStatus,
+  RideStatus,
+  VehicleRegistrationStatus
+} from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { ApiError } from "../../utils/api-error";
 import { notifyRide } from "../../realtime/socket";
@@ -41,7 +47,11 @@ export async function dashboard() {
       prisma.ride.count({
         where: {
           status: {
-            in: [RideStatus.CANCELLED_BY_CUSTOMER, RideStatus.CANCELLED_BY_DRIVER, RideStatus.CANCELLED_BY_SYSTEM]
+            in: [
+              RideStatus.CANCELLED_BY_CUSTOMER,
+              RideStatus.CANCELLED_BY_DRIVER,
+              RideStatus.CANCELLED_BY_SYSTEM
+            ]
           }
         }
       }),
@@ -55,15 +65,23 @@ export async function dashboard() {
   const since = new Date();
   since.setUTCHours(0, 0, 0, 0);
   since.setUTCDate(since.getUTCDate() - 6);
-  const recent = await prisma.payment.findMany({ where: { status: "PAID", paidAt: { gte: since } }, select: { amount: true, paidAt: true } });
+  const recent = await prisma.payment.findMany({
+    where: { status: "PAID", paidAt: { gte: since } },
+    select: { amount: true, paidAt: true }
+  });
   const dailyRevenue = Array.from({ length: 7 }, (_, i) => {
-    const day = new Date(since.getTime() + i * 86400000).toISOString().slice(0,10);
-    return { day, revenue: recent.filter(p => p.paidAt?.toISOString().startsWith(day)).reduce((sum,p) => sum + Number(p.amount),0) };
+    const day = new Date(since.getTime() + i * 86400000).toISOString().slice(0, 10);
+    return {
+      day,
+      revenue: recent
+        .filter((p) => p.paidAt?.toISOString().startsWith(day))
+        .reduce((sum, p) => sum + Number(p.amount), 0)
+    };
   });
   const statusCounts = await prisma.ride.groupBy({ by: ["status"], _count: true });
   return {
     dailyRevenue,
-    statusCounts: statusCounts.map(item => ({ status: item.status, count: item._count })),
+    statusCounts: statusCounts.map((item) => ({ status: item.status, count: item._count })),
     totalUsers,
     totalDrivers,
     onlineDrivers,
@@ -130,10 +148,7 @@ export async function listDrivers(query: ListQuery) {
       query.search
         ? {
             user: {
-              OR: [
-                { phone: { contains: query.search } },
-                { fullName: { contains: query.search } }
-              ]
+              OR: [{ phone: { contains: query.search } }, { fullName: { contains: query.search } }]
             }
           }
         : {}
@@ -214,7 +229,10 @@ export async function rejectDriver(id: string, reason: string, actorId: string) 
   return prisma.$transaction(async (tx) => {
     const changed = await tx.driverProfile.updateMany({
       where: { id, onlineStatus: { not: DriverOnlineStatus.BUSY } },
-      data: { verificationStatus: DriverVerificationStatus.REJECTED, onlineStatus: DriverOnlineStatus.OFFLINE }
+      data: {
+        verificationStatus: DriverVerificationStatus.REJECTED,
+        onlineStatus: DriverOnlineStatus.OFFLINE
+      }
     });
     if (!changed.count) {
       const exists = await tx.driverProfile.findUnique({ where: { id }, select: { id: true } });
@@ -222,7 +240,9 @@ export async function rejectDriver(id: string, reason: string, actorId: string) 
       throw new ApiError(409, "DRIVER_BUSY", "Khong the tu choi tai xe dang co chuyen");
     }
     const driver = await tx.driverProfile.findUniqueOrThrow({ where: { id } });
-    await tx.auditLog.create({ data: { actorId, action: "DRIVER_REJECTED", entityType: "DRIVER", entityId: id, metadata: { reason } } });
+    await tx.auditLog.create({
+      data: { actorId, action: "DRIVER_REJECTED", entityType: "DRIVER", entityId: id, metadata: { reason } }
+    });
     return driver;
   });
 }
@@ -231,11 +251,15 @@ export async function listRides(query: ListQuery) {
   const where = {
     AND: [
       query.status ? { status: query.status as never } : {},
-      query.search ? { OR: [
-        { id: { contains: query.search } },
-        { customer: { fullName: { contains: query.search } } },
-        { driver: { user: { fullName: { contains: query.search } } } }
-      ] } : {}
+      query.search
+        ? {
+            OR: [
+              { id: { contains: query.search } },
+              { customer: { fullName: { contains: query.search } } },
+              { driver: { user: { fullName: { contains: query.search } } } }
+            ]
+          }
+        : {}
     ]
   };
 
@@ -297,7 +321,7 @@ export async function cancelRide(id: string, reason: string, actorId: string) {
 
   const updated = await prisma.$transaction(async (tx) => {
     const changed = await tx.ride.updateMany({
-      where: { id, status: { in: ["SEARCHING_DRIVER","ACCEPTED","DRIVER_ARRIVING","ARRIVED"] } },
+      where: { id, status: { in: ["SEARCHING_DRIVER", "ACCEPTED", "DRIVER_ARRIVING", "ARRIVED"] } },
       data: { status: RideStatus.CANCELLED_BY_SYSTEM }
     });
     if (!changed.count) throw new ApiError(409, "RIDE_INVALID_STATUS", "Khong the huy chuyen");

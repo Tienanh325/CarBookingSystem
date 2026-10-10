@@ -1,0 +1,332 @@
+openapi: 3.1.0
+info:
+  title: GoRide API
+  version: 1.1.0
+  description: API đặt xe, điều phối, thanh toán, ví và quản trị GoRide.
+servers:
+  - url: http://localhost:4000
+    description: Local
+tags:
+  - name: Auth
+  - name: Rides
+  - name: Drivers
+  - name: Wallets
+  - name: Payments
+  - name: Admin
+paths:
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Đăng ký khách hàng
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201': { $ref: '#/components/responses/Success' }
+        '409': { $ref: '#/components/responses/Error' }
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Đăng nhập
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, password]
+              properties:
+                phone: { type: string }
+                password: { type: string, format: password }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Error' }
+  /api/rides/estimate:
+    post:
+      tags: [Rides]
+      summary: Báo giá và lộ trình
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RideRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/rides:
+    post:
+      tags: [Rides]
+      summary: Đặt xe
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/RideRequest'
+                - type: object
+                  properties:
+                    paymentMethod: { type: string, enum: [CASH, WALLET, VIETQR], default: CASH }
+      responses:
+        '201': { $ref: '#/components/responses/Success' }
+        '409': { $ref: '#/components/responses/Error' }
+    get:
+      tags: [Rides]
+      summary: Lịch sử chuyến theo vai trò
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: as
+          schema: { type: string, enum: [customer, driver] }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/rides/current:
+    get:
+      tags: [Rides]
+      summary: Chuyến hiện tại; khách hàng nhận thêm startPin
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: as
+          schema: { type: string, enum: [customer, driver] }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/rides/{id}/cancel:
+    post:
+      tags: [Rides]
+      summary: Khách hủy chuyến; có thể phát sinh phí sau khi tài xế nhận
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties: { reason: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/rides/{id}/invoice:
+    get:
+      tags: [Rides]
+      summary: Lấy hóa đơn chuyến hoàn thành
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '404': { $ref: '#/components/responses/Error' }
+  /api/drivers/rides/{id}/accept:
+    post:
+      tags: [Drivers]
+      summary: Nhận chuyến được mời
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/drivers/rides/{id}/heading:
+    post:
+      tags: [Drivers]
+      summary: Bắt đầu di chuyển đến điểm đón
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/drivers/rides/{id}/arrived:
+    post:
+      tags: [Drivers]
+      summary: Đã đến điểm đón
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/drivers/rides/{id}/start:
+    post:
+      tags: [Drivers]
+      summary: Xác minh PIN và bắt đầu chuyến
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pin]
+              properties: { pin: { type: string, pattern: '^\d{4}$' } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/drivers/rides/{id}/complete:
+    post:
+      tags: [Drivers]
+      summary: Hoàn thành, tính giá thực tế và phát hành hóa đơn
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/drivers/rides/{id}/cancel:
+    post:
+      tags: [Drivers]
+      summary: Tài xế hủy; hệ thống trả cuốc về hàng matching
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties: { reason: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/customers/me/wallet:
+    get:
+      tags: [Wallets]
+      summary: Ví và lịch sử giao dịch khách hàng
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/customers/me/wallet/top-ups:
+    post:
+      tags: [Wallets]
+      summary: Tạo mã VietQR nạp ví
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties: { amount: { type: integer, minimum: 10000 } }
+      responses:
+        '201': { $ref: '#/components/responses/Success' }
+  /api/drivers/me/withdrawals:
+    post:
+      tags: [Wallets]
+      summary: Tạo yêu cầu rút tiền
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { $ref: '#/components/responses/Success' }
+  /api/payments/vietqr/ipn:
+    post:
+      tags: [Payments]
+      summary: IPN VietQR, xác thực HMAC-SHA256
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VietQrIpn' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Error' }
+  /api/admin/withdrawals/{id}/approve:
+    post:
+      tags: [Admin]
+      summary: Duyệt và trừ số dư rút tiền
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/admin/surcharges/context/weather:
+    patch:
+      tags: [Admin]
+      summary: Cập nhật điều kiện thời tiết tính phụ phí
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                weatherCondition: { type: string, enum: [NORMAL, RAIN, HEAVY_RAIN, FLOOD] }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    RideId:
+      in: path
+      name: id
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    Point:
+      type: object
+      required: [address, lat, lng]
+      properties:
+        address: { type: string }
+        lat: { type: number, minimum: -90, maximum: 90 }
+        lng: { type: number, minimum: -180, maximum: 180 }
+    RideRequest:
+      type: object
+      required: [pickup, dropoff, vehicleTypeId]
+      properties:
+        pickup: { $ref: '#/components/schemas/Point' }
+        dropoff: { $ref: '#/components/schemas/Point' }
+        stops:
+          type: array
+          maxItems: 2
+          items: { $ref: '#/components/schemas/Point' }
+        vehicleTypeId: { type: string, format: uuid }
+        promotionCode: { type: string }
+        scheduledAt: { type: string, format: date-time }
+    RegisterRequest:
+      type: object
+      required: [phone, fullName, password]
+      properties:
+        phone: { type: string }
+        fullName: { type: string }
+        email: { type: string, format: email }
+        password: { type: string, format: password }
+    VietQrIpn:
+      type: object
+      required: [transactionId, reference, amount, paidAt, signature]
+      properties:
+        transactionId: { type: string }
+        reference: { type: string }
+        amount: { type: integer, minimum: 1 }
+        paidAt: { type: string, format: date-time }
+        signature: { type: string, pattern: '^[a-fA-F0-9]{64}$' }
+    ApiError:
+      type: object
+      properties:
+        success: { type: boolean, const: false }
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: {}
+  responses:
+    Success:
+      description: Thành công
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success: { type: boolean, const: true }
+              message: { type: string }
+              data: {}
+    Error:
+      description: Lỗi nghiệp vụ
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }

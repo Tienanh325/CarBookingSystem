@@ -8,6 +8,8 @@ import { apiRouter } from "./routes";
 import { errorMiddleware } from "./middlewares/error.middleware";
 import { notFoundMiddleware } from "./middlewares/not-found.middleware";
 import { prisma } from "./config/prisma";
+import swaggerUi from "swagger-ui-express";
+import { openApiDocument } from "./openapi";
 
 export function createApp() {
   const app = express();
@@ -23,10 +25,11 @@ export function createApp() {
       limit: env.apiRateLimit,
       standardHeaders: true,
       legacyHeaders: false,
-      handler: (_req, res) => res.status(429).json({
-        success: false,
-        error: { code: "RATE_LIMITED", message: "Qua nhieu yeu cau. Vui long thu lai sau." }
-      })
+      handler: (_req, res) =>
+        res.status(429).json({
+          success: false,
+          error: { code: "RATE_LIMITED", message: "Qua nhieu yeu cau. Vui long thu lai sau." }
+        })
     })
   );
 
@@ -40,10 +43,17 @@ export function createApp() {
     });
   });
 
+  app.get("/openapi.json", (_req, res) => res.json(openApiDocument));
+  app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(openApiDocument, { explorer: true }));
+
   app.use("/api", apiRouter);
   app.get("/ready", async (_req, res) => {
-    try { await prisma.$queryRaw`SELECT 1`; res.json({ success: true, data: { database: "ready" } }); }
-    catch { res.status(503).json({ success: false, error: { message: "Database unavailable" } }); }
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      res.json({ success: true, data: { database: "ready" } });
+    } catch {
+      res.status(503).json({ success: false, error: { message: "Database unavailable" } });
+    }
   });
   app.use(notFoundMiddleware);
   app.use(errorMiddleware);

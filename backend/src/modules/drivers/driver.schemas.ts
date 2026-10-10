@@ -31,3 +31,7 @@ export const rideParamSchema = z.object({
 export const driverCancelRideSchema = z.object({
   reason: z.string().min(3).max(255)
 });
+
+export const startRideSchema = z.object({
+  pin: z.string().regex(/^\d{4}$/)
+});

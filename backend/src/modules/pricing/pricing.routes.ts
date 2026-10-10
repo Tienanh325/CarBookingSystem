@@ -10,4 +10,8 @@ export const pricingRouter = Router();
 pricingRouter.use(requireAuth, authorize(ROLES.ADMIN));
 pricingRouter.get("/", controller.listPricingRules);
 pricingRouter.post("/", validate({ body: createPricingRuleSchema }), controller.createPricingRule);
-pricingRouter.patch("/:id", validate({ params: pricingRuleParamSchema, body: updatePricingRuleSchema }), controller.updatePricingRule);
+pricingRouter.patch(
+  "/:id",
+  validate({ params: pricingRuleParamSchema, body: updatePricingRuleSchema }),
+  controller.updatePricingRule
+);

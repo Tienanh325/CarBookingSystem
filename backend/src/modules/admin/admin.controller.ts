@@ -12,7 +12,12 @@ export const listUsers = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const updateUserStatus = asyncHandler(async (req: Request, res: Response) => {
-  res.json(ok(await service.updateUserStatus(req.params.id as string, req.body.status, req.auth!.userId), "Cap nhat trang thai user thanh cong"));
+  res.json(
+    ok(
+      await service.updateUserStatus(req.params.id as string, req.body.status, req.auth!.userId),
+      "Cap nhat trang thai user thanh cong"
+    )
+  );
 });
 
 export const listDrivers = asyncHandler(async (req: Request, res: Response) => {
@@ -24,11 +29,18 @@ export const getDriver = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const approveDriver = asyncHandler(async (req: Request, res: Response) => {
-  res.json(ok(await service.approveDriver(req.params.id as string, req.auth!.userId), "Duyet tai xe thanh cong"));
+  res.json(
+    ok(await service.approveDriver(req.params.id as string, req.auth!.userId), "Duyet tai xe thanh cong")
+  );
 });
 
 export const rejectDriver = asyncHandler(async (req: Request, res: Response) => {
-  res.json(ok(await service.rejectDriver(req.params.id as string, req.body.reason, req.auth!.userId), "Tu choi ho so tai xe thanh cong"));
+  res.json(
+    ok(
+      await service.rejectDriver(req.params.id as string, req.body.reason, req.auth!.userId),
+      "Tu choi ho so tai xe thanh cong"
+    )
+  );
 });
 
 export const listRides = asyncHandler(async (req: Request, res: Response) => {
@@ -40,7 +52,12 @@ export const getRide = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const cancelRide = asyncHandler(async (req: Request, res: Response) => {
-  res.json(ok(await service.cancelRide(req.params.id as string, req.body.reason, req.auth!.userId), "Admin da huy chuyen"));
+  res.json(
+    ok(
+      await service.cancelRide(req.params.id as string, req.body.reason, req.auth!.userId),
+      "Admin da huy chuyen"
+    )
+  );
 });
 
 export const listPayments = asyncHandler(async (req: Request, res: Response) => {

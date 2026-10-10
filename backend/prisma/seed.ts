@@ -84,14 +84,36 @@ async function main() {
   });
 
   const surchargeRules = [
-    { name: "Gio cao diem sang", type: "PEAK_HOUR" as const, multiplier: 1.2, startMinute: 7 * 60, endMinute: 9 * 60, daysOfWeek: "1,2,3,4,5" },
-    { name: "Gio cao diem chieu", type: "PEAK_HOUR" as const, multiplier: 1.2, startMinute: 17 * 60, endMinute: 19 * 60, daysOfWeek: "1,2,3,4,5" },
-    { name: "Dem khuya", type: "LATE_NIGHT" as const, multiplier: 1.15, startMinute: 22 * 60, endMinute: 5 * 60 },
+    {
+      name: "Gio cao diem sang",
+      type: "PEAK_HOUR" as const,
+      multiplier: 1.2,
+      startMinute: 7 * 60,
+      endMinute: 9 * 60,
+      daysOfWeek: "1,2,3,4,5"
+    },
+    {
+      name: "Gio cao diem chieu",
+      type: "PEAK_HOUR" as const,
+      multiplier: 1.2,
+      startMinute: 17 * 60,
+      endMinute: 19 * 60,
+      daysOfWeek: "1,2,3,4,5"
+    },
+    {
+      name: "Dem khuya",
+      type: "LATE_NIGHT" as const,
+      multiplier: 1.15,
+      startMinute: 22 * 60,
+      endMinute: 5 * 60
+    },
     { name: "Troi mua", type: "WEATHER" as const, multiplier: 1.15, weatherConditions: "RAIN,HEAVY_RAIN" },
     { name: "Ngap lut", type: "WEATHER" as const, multiplier: 1.3, weatherConditions: "FLOOD" }
   ];
   for (const rule of surchargeRules) {
-    const existing = await prisma.surchargeRule.findFirst({ where: { name: rule.name, vehicleTypeId: null } });
+    const existing = await prisma.surchargeRule.findFirst({
+      where: { name: rule.name, vehicleTypeId: null }
+    });
     if (existing) await prisma.surchargeRule.update({ where: { id: existing.id }, data: rule });
     else await prisma.surchargeRule.create({ data: rule });
   }

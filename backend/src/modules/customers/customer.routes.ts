@@ -17,4 +17,8 @@ customerRouter.get("/me/addresses", controller.listAddresses);
 customerRouter.post("/me/addresses", validate({ body: createAddressSchema }), controller.createAddress);
 customerRouter.delete("/me/addresses/:id", validate({ params: idParamSchema }), controller.deleteAddress);
 customerRouter.get("/me/wallet", walletController.getCustomerWallet);
-customerRouter.post("/me/wallet/top-ups", validate({ body: createTopUpSchema }), walletController.createTopUp);
+customerRouter.post(
+  "/me/wallet/top-ups",
+  validate({ body: createTopUpSchema }),
+  walletController.createTopUp
+);

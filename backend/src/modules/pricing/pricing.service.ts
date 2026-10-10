@@ -4,19 +4,24 @@ import { ApiError } from "../../utils/api-error";
 import { calculateFare, calculateSurcharges } from "./pricing.utils";
 import { validatePromotionForFare } from "../promotions/promotion.service";
 import { getRoadRoute } from "../../integrations/routing.service";
+import { env } from "../../config/env";
 
 function asNumber(value: unknown) {
   return Number(value);
 }
 
-export async function estimateRide(input: {
-  pickup: { address: string; lat: number; lng: number };
-  dropoff: { address: string; lat: number; lng: number };
-  stops?: { address: string; lat: number; lng: number; dwellMinutes?: number }[];
-  vehicleTypeId: string;
-  promotionCode?: string;
-  scheduledAt?: Date;
-}, userId?: string, db: Prisma.TransactionClient = prisma as unknown as Prisma.TransactionClient) {
+export async function estimateRide(
+  input: {
+    pickup: { address: string; lat: number; lng: number };
+    dropoff: { address: string; lat: number; lng: number };
+    stops?: { address: string; lat: number; lng: number; dwellMinutes?: number }[];
+    vehicleTypeId: string;
+    promotionCode?: string;
+    scheduledAt?: Date;
+  },
+  userId?: string,
+  db: Prisma.TransactionClient = prisma as unknown as Prisma.TransactionClient
+) {
   const vehicleType = await db.vehicleType.findUnique({
     where: { id: input.vehicleTypeId }
   });
@@ -58,10 +63,12 @@ export async function estimateRide(input: {
         peakMultiplier: 1
       };
 
-  const stopFee = Math.round(stops.reduce(
-    (sum, stop) => sum + (stop.dwellMinutes ?? 5) * Number(pricingRule?.waitingFeePerMinute ?? 0),
-    0
-  ));
+  const stopFee = Math.round(
+    stops.reduce(
+      (sum, stop) => sum + (stop.dwellMinutes ?? 5) * Number(pricingRule?.waitingFeePerMinute ?? 0),
+      0
+    )
+  );
   const fareBeforeSurcharge = calculateFare(rule, distanceKm, route.durationMin) + stopFee;
   const effectiveAt = input.scheduledAt ?? now;
   const [surchargeRules, pricingContext] = await Promise.all([
@@ -105,6 +112,15 @@ export async function estimateRide(input: {
     finalFare,
     promotionId,
     stopFee,
+    pricingSnapshot: {
+      baseFare: rule.baseFare,
+      perKmFare: rule.perKmFare,
+      perMinuteFare: rule.perMinuteFare,
+      minimumFare: rule.minimumFare,
+      peakMultiplier: rule.peakMultiplier,
+      waitingFeePerMinute: Number(pricingRule?.waitingFeePerMinute ?? 0),
+      waitingGraceMinutes: env.waitingGraceMinutes
+    },
     fareBeforeSurcharge,
     surchargeAmount: surcharge.amount,
     surchargeBreakdown: surcharge.applied,

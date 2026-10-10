@@ -11,19 +11,23 @@ import {
   updateUserStatusSchema
 } from "./admin.schemas";
 import * as promotionController from "../promotions/promotion.controller";
-import { createPromotionSchema, promotionParamSchema, updatePromotionSchema } from "../promotions/promotion.schemas";
+import {
+  createPromotionSchema,
+  promotionParamSchema,
+  updatePromotionSchema
+} from "../promotions/promotion.schemas";
 import * as walletController from "../wallets/wallet.controller";
-import { rejectWithdrawalSchema, withdrawalListSchema, withdrawalParamSchema } from "../wallets/wallet.schemas";
+import {
+  rejectWithdrawalSchema,
+  withdrawalListSchema,
+  withdrawalParamSchema
+} from "../wallets/wallet.schemas";
 
 export const adminRouter = Router();
 
 adminRouter.use(requireAuth);
 
-adminRouter.get(
-  "/dashboard",
-  authorize(ROLES.ADMIN, ROLES.OPERATOR, ROLES.ACCOUNTANT),
-  controller.dashboard
-);
+adminRouter.get("/dashboard", authorize(ROLES.ADMIN, ROLES.OPERATOR, ROLES.ACCOUNTANT), controller.dashboard);
 
 adminRouter.get(
   "/users",
@@ -88,11 +92,7 @@ adminRouter.get(
   validate({ query: listQuerySchema }),
   controller.listPayments
 );
-adminRouter.get(
-  "/reports/revenue",
-  authorize(ROLES.ADMIN, ROLES.ACCOUNTANT),
-  controller.revenueReport
-);
+adminRouter.get("/reports/revenue", authorize(ROLES.ADMIN, ROLES.ACCOUNTANT), controller.revenueReport);
 
 adminRouter.get(
   "/withdrawals",

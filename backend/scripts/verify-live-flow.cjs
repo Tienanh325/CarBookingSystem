@@ -108,14 +108,14 @@ async function main() {
   const driverPhone = `08${suffix}`;
   const customerPhone = `09${suffix}`;
 
-  console.log("1/11 Checking API and MySQL readiness");
+  console.log("1/12 Checking API and MySQL readiness");
   const ready = await request("/ready");
   assert.equal(ready.database, "ready");
   const vehicleTypes = await request("/api/vehicle-types");
   const vehicleType = vehicleTypes.find((item) => item.code === "CAR4") || vehicleTypes[0];
   assert.ok(vehicleType?.id);
 
-  console.log("2/11 Registering real customer and driver accounts");
+  console.log("2/12 Registering real customer and driver accounts");
   const adminAuth = await request("/api/auth/login", {
     method: "POST",
     body: {
@@ -134,7 +134,7 @@ async function main() {
   });
   createdUserIds.push(customerAuth.user.id);
 
-  console.log("3/11 Registering and approving the driver profile");
+  console.log("3/12 Registering and approving the driver profile");
   const driver = await request("/api/drivers/register", {
     token: driverAuth.tokens.accessToken,
     method: "POST",
@@ -171,12 +171,12 @@ async function main() {
     body: {}
   });
 
-  console.log("4/11 Connecting customer and driver through Socket.IO");
+  console.log("4/12 Connecting customer and driver through Socket.IO");
   const customerSocket = await connectSocket(customerAuth.tokens.accessToken);
   const driverSocket = await connectSocket(driverAuth.tokens.accessToken);
   const incomingRide = waitForEvent(driverSocket, "ride.request.created");
 
-  console.log("5/11 Estimating and creating a ride in MySQL");
+  console.log("5/12 Estimating and creating a ride in MySQL");
   const trip = {
     pickup: { address: "Ben Thanh Market, District 1", lat: 10.7723, lng: 106.6981 },
     stops: [{ address: "Saigon Central Post Office, District 1", lat: 10.7798, lng: 106.6999, dwellMinutes: 5 }],
@@ -203,7 +203,7 @@ async function main() {
   assert.equal(incomingPayload.rideId, ride.id);
   await joinRide(customerSocket, ride.id);
 
-  console.log("6/11 Accepting the ride and streaming driver location");
+  console.log("6/12 Accepting the ride and streaming driver location");
   const acceptedEvent = waitForEvent(customerSocket, "ride.accepted", (payload) => payload.rideId === ride.id);
   const requests = await request("/api/drivers/me/ride-requests", { token: driverAuth.tokens.accessToken });
   assert.ok(requests.some((item) => item.id === ride.id));
@@ -221,20 +221,24 @@ async function main() {
   });
   await locationEvent;
 
-  console.log("7/11 Completing the ride state machine and cash payment");
-  for (const action of ["arrived", "start", "complete"]) {
-    await request(`/api/drivers/rides/${ride.id}/${action}`, {
-      token: driverAuth.tokens.accessToken,
-      method: "POST",
-      body: {}
-    });
-  }
+  console.log("7/12 Completing the ride state machine and cash payment");
+  await request(`/api/drivers/rides/${ride.id}/heading`, { token: driverAuth.tokens.accessToken, method: "POST", body: {} });
+  await request(`/api/drivers/rides/${ride.id}/arrived`, { token: driverAuth.tokens.accessToken, method: "POST", body: {} });
+  const rideForPin = await request("/api/rides/current?as=customer", { token: customerAuth.tokens.accessToken });
+  assert.match(rideForPin.startPin, /^\d{4}$/);
+  await request(`/api/drivers/rides/${ride.id}/start`, { token: driverAuth.tokens.accessToken, method: "POST", body: { pin: rideForPin.startPin } });
+  await request("/api/drivers/me/location", { token: driverAuth.tokens.accessToken, method: "POST", body: { lat: 10.785, lng: 106.711, heading: 90, speed: 25 } });
+  await request(`/api/drivers/rides/${ride.id}/complete`, { token: driverAuth.tokens.accessToken, method: "POST", body: {} });
   const customerCurrent = await request("/api/rides/current?as=customer", { token: customerAuth.tokens.accessToken });
   assert.equal(customerCurrent, null);
   const customerHistory = await request("/api/rides?as=customer", { token: customerAuth.tokens.accessToken });
   const completed = customerHistory.find((item) => item.id === ride.id);
   assert.equal(completed?.status, "COMPLETED");
   assert.equal(completed?.payment?.status, "PAID");
+  assert.ok(Number(completed?.actualDistanceKm) > 0);
+  assert.ok(completed?.invoice?.invoiceNumber);
+  const invoice = await request(`/api/rides/${ride.id}/invoice`, { token: customerAuth.tokens.accessToken });
+  assert.equal(invoice.total, completed.finalFare);
   await request(`/api/rides/${ride.id}/rating`, {
     token: customerAuth.tokens.accessToken,
     method: "POST",
@@ -253,7 +257,63 @@ async function main() {
     body: { reason: "Live flow scheduled booking cleanup" }
   });
 
-  console.log("8/11 Verifying role-scoped screens and admin reporting");
+  console.log("8/12 Verifying cancellation fees and driver rematching");
+  await request("/api/drivers/me/location", {
+    token: driverAuth.tokens.accessToken,
+    method: "POST",
+    body: { lat: 10.775, lng: 106.701, heading: 90, speed: 0 }
+  });
+  const cancellationOffer = waitForEvent(driverSocket, "ride.request.created");
+  const cancellationRide = await request("/api/rides", {
+    token: customerAuth.tokens.accessToken,
+    method: "POST",
+    body: { ...trip, stops: [], paymentMethod: "CASH" }
+  });
+  createdRideIds.push(cancellationRide.id);
+  assert.equal((await cancellationOffer).rideId, cancellationRide.id);
+  await request(`/api/drivers/rides/${cancellationRide.id}/accept`, {
+    token: driverAuth.tokens.accessToken,
+    method: "POST",
+    body: {}
+  });
+  const customerCancelled = await request(`/api/rides/${cancellationRide.id}/cancel`, {
+    token: customerAuth.tokens.accessToken,
+    method: "POST",
+    body: { reason: "Verify cancellation fee after driver acceptance" }
+  });
+  assert.equal(customerCancelled.status, "CANCELLED_BY_CUSTOMER");
+  assert.equal(Number(customerCancelled.cancellationFee), 10_000);
+  assert.equal(Number(customerCancelled.finalFare), 10_000);
+  assert.equal(customerCancelled.payment.status, "PENDING");
+
+  const rematchOffer = waitForEvent(driverSocket, "ride.request.created");
+  const rematchRide = await request("/api/rides", {
+    token: customerAuth.tokens.accessToken,
+    method: "POST",
+    body: { ...trip, stops: [], paymentMethod: "CASH" }
+  });
+  createdRideIds.push(rematchRide.id);
+  assert.equal((await rematchOffer).rideId, rematchRide.id);
+  await request(`/api/drivers/rides/${rematchRide.id}/accept`, {
+    token: driverAuth.tokens.accessToken,
+    method: "POST",
+    body: {}
+  });
+  const rematching = await request(`/api/drivers/rides/${rematchRide.id}/cancel`, {
+    token: driverAuth.tokens.accessToken,
+    method: "POST",
+    body: { reason: "Verify automatic rematching" }
+  });
+  assert.equal(rematching.status, "SEARCHING_DRIVER");
+  assert.equal(rematching.driverId, null);
+  assert.equal(rematching.driverCancelCount, 1);
+  await request(`/api/rides/${rematchRide.id}/cancel`, {
+    token: customerAuth.tokens.accessToken,
+    method: "POST",
+    body: { reason: "Clean up rematching verification" }
+  });
+
+  console.log("9/12 Verifying role-scoped screens and admin reporting");
   const driverCustomerHistory = await request("/api/rides?as=customer", { token: driverAuth.tokens.accessToken });
   const driverRideHistory = await request("/api/rides?as=driver", { token: driverAuth.tokens.accessToken });
   assert.ok(Array.isArray(driverCustomerHistory));
@@ -264,7 +324,7 @@ async function main() {
   assert.ok(dashboard.completedRides >= 1);
   assert.ok(dashboard.revenue >= Number(completed.finalFare));
 
-  console.log("9/11 Verifying VietQR IPN, idempotency and wallet refunds");
+  console.log("10/12 Verifying VietQR IPN, idempotency and wallet refunds");
   const topUp = await request("/api/customers/me/wallet/top-ups", {
     token: customerAuth.tokens.accessToken,
     method: "POST",
@@ -277,10 +337,12 @@ async function main() {
   const signaturePayload = `${transactionId}|${topUp.paymentReference}|1000000|${paidAt}`;
   const signature = createHmac("sha256", process.env.VIETQR_WEBHOOK_SECRET || "dev-vietqr-secret-change-me").update(signaturePayload).digest("hex");
   const ipnBody = { transactionId, reference: topUp.paymentReference, amount: 1_000_000, paidAt, signature };
-  const ipn = await request("/api/payments/vietqr/ipn", { method: "POST", body: ipnBody });
-  assert.equal(ipn.kind, "TOP_UP");
-  const duplicateIpn = await request("/api/payments/vietqr/ipn", { method: "POST", body: ipnBody });
-  assert.equal(duplicateIpn.duplicate, true);
+  const ipnResults = await Promise.all([
+    request("/api/payments/vietqr/ipn", { method: "POST", body: ipnBody }),
+    request("/api/payments/vietqr/ipn", { method: "POST", body: ipnBody })
+  ]);
+  assert.equal(ipnResults.filter((item) => item.kind === "TOP_UP").length, 1);
+  assert.equal(ipnResults.filter((item) => item.duplicate).length, 1);
   const walletBefore = await request("/api/customers/me/wallet", { token: customerAuth.tokens.accessToken });
   assert.equal(walletBefore.balance, 1_000_000);
   const walletRide = await request("/api/rides", {
@@ -300,7 +362,7 @@ async function main() {
   const walletAfterRefund = await request("/api/customers/me/wallet", { token: customerAuth.tokens.accessToken });
   assert.equal(walletAfterRefund.balance, 1_000_000);
 
-  console.log("10/11 Verifying withdrawal reserve and admin approval");
+  console.log("11/12 Verifying withdrawal reserve and admin approval");
   await prisma.driverWallet.update({ where: { driverId: driver.id }, data: { balance: 100_000, pendingBalance: 0 } });
   const withdrawal = await request("/api/drivers/me/withdrawals", {
     token: driverAuth.tokens.accessToken,
@@ -320,7 +382,7 @@ async function main() {
   assert.equal(driverWallet.balance, 50_000);
   assert.equal(driverWallet.pendingBalance, 0);
 
-  console.log("11/11 Revoking the customer session and Socket.IO connection");
+  console.log("12/12 Revoking the customer session and Socket.IO connection");
   const disconnected = waitForEvent(customerSocket, "disconnect", () => true);
   await request("/api/auth/logout", {
     token: customerAuth.tokens.accessToken,
@@ -339,7 +401,9 @@ async function main() {
     body: {}
   });
 
-  console.log("LIVE FLOW VERIFIED: rides, VietQR IPN, wallets, withdrawals, RBAC and Socket.IO all passed.");
+  console.log(
+    "LIVE FLOW VERIFIED: actual fares, invoices, cancellation fees, rematching, VietQR, wallets, withdrawals, RBAC and Socket.IO all passed."
+  );
 }
 
 main()
