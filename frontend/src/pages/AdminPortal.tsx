@@ -1,14 +1,14 @@
 import { useState, type FormEvent, type ReactNode } from "react";
-import { CarFront, Check, ChevronLeft, ChevronRight, Eye, LayoutDashboard, Pencil, Plus, RefreshCw, Route, Search, Tags, UsersRound, Wallet, X } from "lucide-react";
+import { Banknote, CarFront, Check, ChevronLeft, ChevronRight, CloudRain, Eye, LayoutDashboard, Pencil, Plus, RefreshCw, Route, Search, Tags, UsersRound, Wallet, X } from "lucide-react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Feedback, Modal, RideDetails } from "../components/LiveUI";
 import { StatusBadge } from "../components/StatusBadge";
 import { apiRequest, mutate } from "../services/api";
 import { useResource } from "../services/live";
-import { date, labels, money, type Driver, type Page, type Pricing, type Promotion, type Ride, type User, type VehicleType } from "../types";
+import { date, labels, money, type Driver, type Page, type Pricing, type Promotion, type Ride, type User, type VehicleType, type Withdrawal } from "../types";
 
-type Section="overview"|"rides"|"drivers"|"pricing"|"promotions"|"users"|"payments";
-const menus=[{id:"overview",name:"Tổng quan",icon:LayoutDashboard},{id:"rides",name:"Chuyến đi",icon:Route},{id:"drivers",name:"Tài xế",icon:CarFront},{id:"pricing",name:"Bảng giá",icon:Wallet},{id:"promotions",name:"Khuyến mãi",icon:Tags},{id:"users",name:"Tài khoản",icon:UsersRound},{id:"payments",name:"Thanh toán",icon:Wallet}] as const;
+type Section="overview"|"rides"|"drivers"|"pricing"|"surcharges"|"promotions"|"users"|"payments"|"withdrawals";
+const menus=[{id:"overview",name:"Tổng quan",icon:LayoutDashboard},{id:"rides",name:"Chuyến đi",icon:Route},{id:"drivers",name:"Tài xế",icon:CarFront},{id:"pricing",name:"Bảng giá",icon:Wallet},{id:"surcharges",name:"Phụ phí",icon:CloudRain},{id:"promotions",name:"Khuyến mãi",icon:Tags},{id:"users",name:"Tài khoản",icon:UsersRound},{id:"payments",name:"Thanh toán",icon:Wallet},{id:"withdrawals",name:"Rút tiền",icon:Banknote}] as const;
 function Badge({status}:{status:string}){return <StatusBadge tone={["COMPLETED","APPROVED","PAID","ACTIVE"].includes(status)?"success":status.includes("CANCEL")||["REJECTED","LOCKED"].includes(status)?"danger":"info"}>{labels[status]??status}</StatusBadge>;}
 function IconAction({label,onClick,children}:{label:string;onClick:()=>void;children:ReactNode}){return <button className="icon-button subtle" aria-label={label} title={label} onClick={onClick}>{children}</button>;}
 function Pager({page,total,change}:{page:number;total:number;change:(page:number)=>void}){
@@ -19,7 +19,7 @@ export function AdminPortal(){
   const [section,setSection]=useState<Section>("overview");
   return <div className="admin-layout"><aside className="admin-sidebar"><div className="admin-sidebar-label">Vận hành</div><nav aria-label="Điều hướng quản trị">{menus.map(m=><button key={m.id} className={m.id===section?"active":""} onClick={()=>setSection(m.id)}><m.icon size={18}/><span>{m.name}</span></button>)}</nav></aside>
     <main className="admin-main"><header className="admin-content-header"><h1>{menus.find(m=>m.id===section)?.name}</h1><span>{new Date().toLocaleDateString("vi-VN")}</span></header><div className="admin-content">
-      {section==="overview"?<Overview openRides={()=>setSection("rides")}/>:section==="pricing"?<PricingView/>:section==="promotions"?<PromotionsView/>:<RecordsView key={section} section={section}/>}
+      {section==="overview"?<Overview openRides={()=>setSection("rides")}/>:section==="pricing"?<PricingView/>:section==="surcharges"?<SurchargeView/>:section==="promotions"?<PromotionsView/>:section==="withdrawals"?<WithdrawalView/>:<RecordsView key={section} section={section}/>}
     </div></main></div>;
 }
 function Overview({openRides}:{openRides:()=>void}){
@@ -82,6 +82,32 @@ function PricingView(){
       <label className="check-label"><input name="isActive" type="checkbox" defaultChecked={item?.isActive??true}/> Đang áp dụng</label><Feedback error={error}/><button className="primary-button" disabled={busy}>Lưu bảng giá</button></form></Modal>}
   </section>;
 }
+function WithdrawalView(){
+  const [status,setStatus]=useState("PENDING"),[page,setPage]=useState(1),[error,setError]=useState(""),[busy,setBusy]=useState(false);
+  const resource=useResource<Page<Withdrawal>>(`/admin/withdrawals?${new URLSearchParams({status,page:String(page),limit:"10"})}`);
+  async function review(item:Withdrawal,approve:boolean){
+    const reason=approve?undefined:window.prompt("Lý do từ chối yêu cầu rút tiền:");
+    if(!approve&&!reason)return;
+    setBusy(true);setError("");try{await mutate(`/admin/withdrawals/${item.id}/${approve?"approve":"reject"}`,approve?{}:{reason});await resource.reload();}catch(e){setError((e as Error).message);}finally{setBusy(false);}
+  }
+  return <section><div className="filter-bar"><select className="select-control" value={status} onChange={e=>{setStatus(e.target.value);setPage(1);}}><option value="">Tất cả</option><option value="PENDING">Chờ duyệt</option><option value="APPROVED">Đã duyệt</option><option value="REJECTED">Từ chối</option></select><IconAction label="Làm mới" onClick={()=>void resource.reload()}><RefreshCw size={18}/></IconAction></div><Feedback error={error||resource.error} loading={resource.loading}/>
+    <div className="table-scroll"><table className="data-table"><thead><tr><th>Tài xế</th><th>Ngân hàng</th><th>Số tiền</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>{resource.data?.items.map(item=><tr key={item.id}><td><strong>{item.driver?.user.fullName}</strong><small className="record-id">{date(item.createdAt)}</small></td><td>{item.bankCode} · {item.accountNumber}<small className="record-id">{item.accountName}</small></td><td>{money(item.amount)}</td><td><Badge status={item.status}/></td><td>{item.status==="PENDING"&&<div className="dual-actions"><button className="primary-button" disabled={busy} onClick={()=>void review(item,true)}>Duyệt</button><button className="secondary-button danger-text" disabled={busy} onClick={()=>void review(item,false)}>Từ chối</button></div>}</td></tr>)}</tbody></table></div><Pager page={page} total={resource.data?.total??0} change={setPage}/></section>;
+}
+
+type Surcharge={id:string;name:string;type:string;multiplier:string;fixedAmount:string;startMinute?:number|null;endMinute?:number|null;daysOfWeek?:string|null;weatherConditions?:string|null;isActive:boolean;vehicleType?:VehicleType|null};
+function SurchargeView(){
+  const resource=useResource<Surcharge[]>("/admin/surcharges"),context=useResource<{weatherCondition:string}>("/admin/surcharges/context/weather"),vehicles=useResource<VehicleType[]>("/vehicle-types");
+  const [creating,setCreating]=useState(false),[kind,setKind]=useState("PEAK_HOUR"),[error,setError]=useState(""),[busy,setBusy]=useState(false);
+  const minutes=(value:FormDataEntryValue|null)=>{if(!value)return undefined;const [hour,minute]=String(value).split(":").map(Number);return hour*60+minute;};
+  async function create(e:FormEvent<HTMLFormElement>){e.preventDefault();const f=new FormData(e.currentTarget);setBusy(true);setError("");try{await mutate("/admin/surcharges",{name:f.get("name"),type:kind,vehicleTypeId:f.get("vehicleTypeId")||null,multiplier:Number(f.get("multiplier")),fixedAmount:Number(f.get("fixedAmount")),...(kind==="WEATHER"?{weatherConditions:[f.get("weatherCondition")]}:{startMinute:minutes(f.get("startTime")),endMinute:minutes(f.get("endTime")),daysOfWeek:[0,1,2,3,4,5,6]}),isActive:true});setCreating(false);await resource.reload();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+  async function weather(value:string){setError("");try{await mutate("/admin/surcharges/context/weather",{weatherCondition:value},"PATCH");await context.reload();}catch(e){setError((e as Error).message);}}
+  async function toggle(item:Surcharge){setError("");try{await mutate("/admin/surcharges/"+item.id,{isActive:!item.isActive},"PATCH");await resource.reload();}catch(e){setError((e as Error).message);}}
+  return <section><div className="data-panel-heading"><div><h2>Phụ phí linh hoạt</h2><label>Thời tiết hiện tại<select value={context.data?.weatherCondition??"NORMAL"} onChange={e=>void weather(e.target.value)}><option value="NORMAL">Bình thường</option><option value="RAIN">Mưa</option><option value="HEAVY_RAIN">Mưa lớn</option><option value="FLOOD">Ngập</option></select></label></div><button className="primary-button" onClick={()=>setCreating(true)}><Plus size={18}/>Thêm phụ phí</button></div><Feedback error={error||resource.error||context.error} loading={resource.loading}/>
+    <div className="table-scroll"><table className="data-table"><thead><tr><th>Tên</th><th>Loại</th><th>Phạm vi</th><th>Hệ số</th><th>Cố định</th><th>Trạng thái</th></tr></thead><tbody>{resource.data?.map(item=><tr key={item.id}><td>{item.name}</td><td>{item.type}</td><td>{item.vehicleType?.name??"Tất cả"}{item.weatherConditions?` · ${item.weatherConditions}`:""}</td><td>{item.multiplier}×</td><td>{money(item.fixedAmount)}</td><td><button className="text-button" onClick={()=>void toggle(item)}>{item.isActive?"Đang bật":"Đang tắt"}</button></td></tr>)}</tbody></table></div>
+    {creating&&<Modal title="Thêm phụ phí" close={()=>setCreating(false)}><form className="live-form" onSubmit={create}><label>Tên<input name="name" minLength={2} maxLength={100} required/></label><label>Loại<select value={kind} onChange={e=>setKind(e.target.value)}><option value="PEAK_HOUR">Giờ cao điểm</option><option value="LATE_NIGHT">Đêm khuya</option><option value="WEATHER">Thời tiết</option><option value="CUSTOM">Tùy chỉnh</option></select></label><label>Loại xe<select name="vehicleTypeId"><option value="">Tất cả</option>{vehicles.data?.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select></label><label>Hệ số<input name="multiplier" type="number" min={1} max={5} step=".05" defaultValue={1.2} required/></label><label>Phí cố định<input name="fixedAmount" type="number" min={0} defaultValue={0} required/></label>{kind==="WEATHER"?<label>Điều kiện<select name="weatherCondition"><option value="RAIN">Mưa</option><option value="HEAVY_RAIN">Mưa lớn</option><option value="FLOOD">Ngập</option></select></label>:<><label>Bắt đầu<input name="startTime" type="time" required/></label><label>Kết thúc<input name="endTime" type="time" required/></label></>}<Feedback error={error}/><button className="primary-button" disabled={busy}>Lưu phụ phí</button></form></Modal>}
+  </section>;
+}
+
 function PromotionsView(){
   const resource=useResource<Promotion[]>("/admin/promotions");
   const [editing,setEditing]=useState<Promotion|"new"|null>(null),[error,setError]=useState(""),[busy,setBusy]=useState(false);

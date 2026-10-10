@@ -1,6 +1,7 @@
 require("dotenv/config");
 
 const assert = require("node:assert/strict");
+const { createHmac } = require("node:crypto");
 const { PrismaClient } = require("@prisma/client");
 const { io } = require("socket.io-client");
 
@@ -9,6 +10,7 @@ const prisma = new PrismaClient();
 const createdUserIds = [];
 const createdRideIds = [];
 const sockets = [];
+const webhookTransactionIds = [];
 
 async function request(path, { token, method = "GET", body } = {}) {
   const response = await fetch(baseUrl + path, {
@@ -78,6 +80,9 @@ async function joinRide(socket, rideId) {
 
 async function cleanup() {
   sockets.forEach((socket) => socket.disconnect());
+  if (webhookTransactionIds.length) {
+    await prisma.paymentWebhookEvent.deleteMany({ where: { providerTransactionId: { in: webhookTransactionIds } } });
+  }
   if (createdRideIds.length) {
     const rides = { in: createdRideIds };
     await prisma.walletTransaction.deleteMany({ where: { rideId: rides } });
@@ -89,6 +94,9 @@ async function cleanup() {
     await prisma.ride.deleteMany({ where: { id: rides } });
   }
   if (createdUserIds.length) {
+    const wallets = await prisma.customerWallet.findMany({ where: { userId: { in: createdUserIds } }, select: { id: true } });
+    if (wallets.length) await prisma.customerWalletTransaction.deleteMany({ where: { walletId: { in: wallets.map((wallet) => wallet.id) } } });
+    await prisma.walletTopUp.deleteMany({ where: { customerId: { in: createdUserIds } } });
     await prisma.user.deleteMany({ where: { id: { in: createdUserIds } } });
   }
   await prisma.$disconnect();
@@ -100,14 +108,14 @@ async function main() {
   const driverPhone = `08${suffix}`;
   const customerPhone = `09${suffix}`;
 
-  console.log("1/9 Checking API and MySQL readiness");
+  console.log("1/11 Checking API and MySQL readiness");
   const ready = await request("/ready");
   assert.equal(ready.database, "ready");
   const vehicleTypes = await request("/api/vehicle-types");
   const vehicleType = vehicleTypes.find((item) => item.code === "CAR4") || vehicleTypes[0];
   assert.ok(vehicleType?.id);
 
-  console.log("2/9 Registering real customer and driver accounts");
+  console.log("2/11 Registering real customer and driver accounts");
   const adminAuth = await request("/api/auth/login", {
     method: "POST",
     body: {
@@ -126,7 +134,7 @@ async function main() {
   });
   createdUserIds.push(customerAuth.user.id);
 
-  console.log("3/9 Registering and approving the driver profile");
+  console.log("3/11 Registering and approving the driver profile");
   const driver = await request("/api/drivers/register", {
     token: driverAuth.tokens.accessToken,
     method: "POST",
@@ -163,12 +171,12 @@ async function main() {
     body: {}
   });
 
-  console.log("4/9 Connecting customer and driver through Socket.IO");
+  console.log("4/11 Connecting customer and driver through Socket.IO");
   const customerSocket = await connectSocket(customerAuth.tokens.accessToken);
   const driverSocket = await connectSocket(driverAuth.tokens.accessToken);
   const incomingRide = waitForEvent(driverSocket, "ride.request.created");
 
-  console.log("5/9 Estimating and creating a ride in MySQL");
+  console.log("5/11 Estimating and creating a ride in MySQL");
   const trip = {
     pickup: { address: "Ben Thanh Market, District 1", lat: 10.7723, lng: 106.6981 },
     stops: [{ address: "Saigon Central Post Office, District 1", lat: 10.7798, lng: 106.6999, dwellMinutes: 5 }],
@@ -195,7 +203,7 @@ async function main() {
   assert.equal(incomingPayload.rideId, ride.id);
   await joinRide(customerSocket, ride.id);
 
-  console.log("6/9 Accepting the ride and streaming driver location");
+  console.log("6/11 Accepting the ride and streaming driver location");
   const acceptedEvent = waitForEvent(customerSocket, "ride.accepted", (payload) => payload.rideId === ride.id);
   const requests = await request("/api/drivers/me/ride-requests", { token: driverAuth.tokens.accessToken });
   assert.ok(requests.some((item) => item.id === ride.id));
@@ -213,7 +221,7 @@ async function main() {
   });
   await locationEvent;
 
-  console.log("7/9 Completing the ride state machine and cash payment");
+  console.log("7/11 Completing the ride state machine and cash payment");
   for (const action of ["arrived", "start", "complete"]) {
     await request(`/api/drivers/rides/${ride.id}/${action}`, {
       token: driverAuth.tokens.accessToken,
@@ -245,7 +253,7 @@ async function main() {
     body: { reason: "Live flow scheduled booking cleanup" }
   });
 
-  console.log("8/9 Verifying role-scoped screens and admin reporting");
+  console.log("8/11 Verifying role-scoped screens and admin reporting");
   const driverCustomerHistory = await request("/api/rides?as=customer", { token: driverAuth.tokens.accessToken });
   const driverRideHistory = await request("/api/rides?as=driver", { token: driverAuth.tokens.accessToken });
   assert.ok(Array.isArray(driverCustomerHistory));
@@ -256,7 +264,63 @@ async function main() {
   assert.ok(dashboard.completedRides >= 1);
   assert.ok(dashboard.revenue >= Number(completed.finalFare));
 
-  console.log("9/9 Revoking the customer session and Socket.IO connection");
+  console.log("9/11 Verifying VietQR IPN, idempotency and wallet refunds");
+  const topUp = await request("/api/customers/me/wallet/top-ups", {
+    token: customerAuth.tokens.accessToken,
+    method: "POST",
+    body: { amount: 1_000_000 }
+  });
+  assert.ok(topUp.vietQr.qrUrl.includes("img.vietqr.io"));
+  const paidAt = new Date().toISOString();
+  const transactionId = `E2E-TOPUP-${suffix}`;
+  webhookTransactionIds.push(transactionId);
+  const signaturePayload = `${transactionId}|${topUp.paymentReference}|1000000|${paidAt}`;
+  const signature = createHmac("sha256", process.env.VIETQR_WEBHOOK_SECRET || "dev-vietqr-secret-change-me").update(signaturePayload).digest("hex");
+  const ipnBody = { transactionId, reference: topUp.paymentReference, amount: 1_000_000, paidAt, signature };
+  const ipn = await request("/api/payments/vietqr/ipn", { method: "POST", body: ipnBody });
+  assert.equal(ipn.kind, "TOP_UP");
+  const duplicateIpn = await request("/api/payments/vietqr/ipn", { method: "POST", body: ipnBody });
+  assert.equal(duplicateIpn.duplicate, true);
+  const walletBefore = await request("/api/customers/me/wallet", { token: customerAuth.tokens.accessToken });
+  assert.equal(walletBefore.balance, 1_000_000);
+  const walletRide = await request("/api/rides", {
+    token: customerAuth.tokens.accessToken,
+    method: "POST",
+    body: { ...trip, stops: [], scheduledAt: new Date(Date.now() + 3 * 60 * 60_000).toISOString(), paymentMethod: "WALLET" }
+  });
+  createdRideIds.push(walletRide.id);
+  assert.equal(walletRide.payment.status, "PAID");
+  const walletAfterCharge = await request("/api/customers/me/wallet", { token: customerAuth.tokens.accessToken });
+  assert.equal(walletAfterCharge.balance, 1_000_000 - Number(walletRide.payment.amount));
+  await request(`/api/rides/${walletRide.id}/cancel`, {
+    token: customerAuth.tokens.accessToken,
+    method: "POST",
+    body: { reason: "Verify automatic wallet refund" }
+  });
+  const walletAfterRefund = await request("/api/customers/me/wallet", { token: customerAuth.tokens.accessToken });
+  assert.equal(walletAfterRefund.balance, 1_000_000);
+
+  console.log("10/11 Verifying withdrawal reserve and admin approval");
+  await prisma.driverWallet.update({ where: { driverId: driver.id }, data: { balance: 100_000, pendingBalance: 0 } });
+  const withdrawal = await request("/api/drivers/me/withdrawals", {
+    token: driverAuth.tokens.accessToken,
+    method: "POST",
+    body: { amount: 50_000, bankCode: "VCB", accountNumber: "0123456789", accountName: "E2E DRIVER" }
+  });
+  assert.equal(withdrawal.status, "PENDING");
+  let driverWallet = await request("/api/drivers/me/wallet", { token: driverAuth.tokens.accessToken });
+  assert.equal(driverWallet.balance, 100_000);
+  assert.equal(driverWallet.pendingBalance, 50_000);
+  await request(`/api/admin/withdrawals/${withdrawal.id}/approve`, {
+    token: adminAuth.tokens.accessToken,
+    method: "POST",
+    body: {}
+  });
+  driverWallet = await request("/api/drivers/me/wallet", { token: driverAuth.tokens.accessToken });
+  assert.equal(driverWallet.balance, 50_000);
+  assert.equal(driverWallet.pendingBalance, 0);
+
+  console.log("11/11 Revoking the customer session and Socket.IO connection");
   const disconnected = waitForEvent(customerSocket, "disconnect", () => true);
   await request("/api/auth/logout", {
     token: customerAuth.tokens.accessToken,
@@ -275,7 +339,7 @@ async function main() {
     body: {}
   });
 
-  console.log("LIVE FLOW VERIFIED: REST API, MySQL persistence, RBAC and Socket.IO all passed.");
+  console.log("LIVE FLOW VERIFIED: rides, VietQR IPN, wallets, withdrawals, RBAC and Socket.IO all passed.");
 }
 
 main()

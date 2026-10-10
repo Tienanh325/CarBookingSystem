@@ -12,6 +12,8 @@ import {
 } from "./admin.schemas";
 import * as promotionController from "../promotions/promotion.controller";
 import { createPromotionSchema, promotionParamSchema, updatePromotionSchema } from "../promotions/promotion.schemas";
+import * as walletController from "../wallets/wallet.controller";
+import { rejectWithdrawalSchema, withdrawalListSchema, withdrawalParamSchema } from "../wallets/wallet.schemas";
 
 export const adminRouter = Router();
 
@@ -90,6 +92,25 @@ adminRouter.get(
   "/reports/revenue",
   authorize(ROLES.ADMIN, ROLES.ACCOUNTANT),
   controller.revenueReport
+);
+
+adminRouter.get(
+  "/withdrawals",
+  authorize(ROLES.ADMIN, ROLES.ACCOUNTANT),
+  validate({ query: withdrawalListSchema }),
+  walletController.listWithdrawals
+);
+adminRouter.post(
+  "/withdrawals/:id/approve",
+  authorize(ROLES.ADMIN, ROLES.ACCOUNTANT),
+  validate({ params: withdrawalParamSchema }),
+  walletController.approveWithdrawal
+);
+adminRouter.post(
+  "/withdrawals/:id/reject",
+  authorize(ROLES.ADMIN, ROLES.ACCOUNTANT),
+  validate({ params: withdrawalParamSchema, body: rejectWithdrawalSchema }),
+  walletController.rejectWithdrawal
 );
 
 adminRouter.get("/promotions", authorize(ROLES.ADMIN), promotionController.listPromotions);

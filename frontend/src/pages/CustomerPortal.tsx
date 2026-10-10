@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { CarFront, Clock3, LocateFixed, Plus, Star, Trash2 } from "lucide-react";
+import { CarFront, Clock3, LocateFixed, Plus, Star, Trash2, Wallet } from "lucide-react";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
 import { MapCanvas } from "../components/MapCanvas";
 import { Feedback, Modal, RideDetails } from "../components/LiveUI";
 import { apiRequest, mutate, refreshSession } from "../services/api";
 import { useLive, useResource, useRideRoom } from "../services/live";
-import { date, labels, money, type Driver, type Estimate, type Point, type Ride, type RideStop, type VehicleType } from "../types";
+import { date, labels, money, type CustomerWallet, type Driver, type Estimate, type Point, type Ride, type RideStop, type VehicleType, type VietQr } from "../types";
 
 type MapTarget = "pickup" | "dropoff" | `stop-${number}`;
 
@@ -20,15 +20,18 @@ export function CustomerPortal(){
   const vehicles=useResource<VehicleType[]>("/vehicle-types");
   const current=useResource<Ride|null>("/rides/current?as=customer");
   const history=useResource<Ride[]>("/rides?as=customer");
+  const wallet=useResource<CustomerWallet>("/customers/me/wallet");
   const [pickup,setPickup]=useState<Point|null>(null),[dropoff,setDropoff]=useState<Point|null>(null);
   const [stops,setStops]=useState<(Point|null)[]>([]);
   const [target,setTarget]=useState<MapTarget>("pickup");
   const [vehicleId,setVehicleId]=useState(""),[promo,setPromo]=useState("");
+  const [paymentMethod,setPaymentMethod]=useState<"CASH"|"WALLET"|"VIETQR">("CASH");
   const [scheduleEnabled,setScheduleEnabled]=useState(false),[scheduledAt,setScheduledAt]=useState("");
   const [estimate,setEstimate]=useState<Estimate|null>(null);
   const [busy,setBusy]=useState(false),[error,setError]=useState("");
   const [tab,setTab]=useState("booking");
   const [detail,setDetail]=useState<Ride|null>(null),[enroll,setEnroll]=useState(false);
+  const [topUpQr,setTopUpQr]=useState<VietQr|null>(null);
   const [driverPosition,setDriverPosition]=useState<{lat:number;lng:number}|null>(null);
   const ride=current.data;
   const selectedStops=stops.filter((stop):stop is Point=>Boolean(stop));
@@ -65,9 +68,10 @@ export function CustomerPortal(){
     if(stops.some(stop=>!stop))throw new Error("Hãy chọn đầy đủ địa chỉ cho các điểm dừng.");
     if(scheduleEnabled&&!scheduledAt)throw new Error("Hãy chọn thời gian đón dự kiến.");
     if(!estimate){setEstimate(await mutate<Estimate>("/rides/estimate",input));return;}
-    const created=await mutate<Ride>("/rides",{...input,paymentMethod:"CASH"});
-    current.setData(created);setEstimate(null);await history.reload();
+    const created=await mutate<Ride>("/rides",{...input,paymentMethod});
+    current.setData(created);setEstimate(null);await Promise.all([history.reload(),wallet.reload()]);
   });}
+  async function topUp(event:FormEvent<HTMLFormElement>){event.preventDefault();const amount=Number(new FormData(event.currentTarget).get("amount"));await run(async()=>{const result=await mutate<{vietQr:VietQr}>("/customers/me/wallet/top-ups",{amount});setTopUpQr(result.vietQr);});}
   async function cancel(event:FormEvent<HTMLFormElement>){event.preventDefault();const reason=String(new FormData(event.currentTarget).get("reason"));await run(async()=>{await mutate("/rides/"+ride!.id+"/cancel",{reason});await current.reload();await history.reload();});}
   async function rate(event:FormEvent<HTMLFormElement>){event.preventDefault();const form=new FormData(event.currentTarget);await run(async()=>{await mutate("/rides/"+detail!.id+"/rating",{score:Number(form.get("score")),comment:String(form.get("comment"))});setDetail(await apiRequest<Ride>("/rides/"+detail!.id));await history.reload();});}
   async function enrollDriver(event:FormEvent<HTMLFormElement>){event.preventDefault();const form=new FormData(event.currentTarget);await run(async()=>{await mutate<Driver>("/drivers/register",{licenseNumber:form.get("licenseNumber"),identityNumber:form.get("identityNumber"),vehicle:{vehicleTypeId:form.get("vehicleTypeId"),plateNumber:form.get("plateNumber"),model:form.get("model")}});await refreshSession();setEnroll(false);});}
@@ -80,10 +84,14 @@ export function CustomerPortal(){
   return <div className="portal-layout customer-layout">
     <section className="booking-panel">
       <div className="panel-heading"><span className="eyebrow">{auth?.user.fullName}</span><h1>{ride?"Chuyến đi hiện tại":"Bạn muốn đi đâu?"}</h1></div>
-      <div className="live-tabs"><button className={tab==="booking"?"active":""} onClick={()=>setTab("booking")}>Đặt xe</button><button className={tab==="history"?"active":""} onClick={()=>setTab("history")}>Lịch sử</button><button onClick={()=>setEnroll(true)}>Đăng ký tài xế</button></div>
-      <Feedback error={error||current.error||vehicles.error||history.error} loading={current.loading&&!ride}/>
-      {tab==="history"?<section><h2>Lịch sử chuyến</h2>{history.data?.length===0&&<p className="empty-copy">Chưa có chuyến đi.</p>}{history.data?.map(item=><button key={item.id} className="history-row" onClick={()=>setDetail(item)}><strong>{item.dropoffAddress}</strong><span>{labels[item.status]} · {money(item.finalFare??item.estimatedFare)}</span><small>{date(item.scheduledAt??item.requestedAt)}</small></button>)}</section>
+      <div className="live-tabs"><button className={tab==="booking"?"active":""} onClick={()=>setTab("booking")}>Đặt xe</button><button className={tab==="history"?"active":""} onClick={()=>setTab("history")}>Lịch sử</button><button className={tab==="wallet"?"active":""} onClick={()=>setTab("wallet")}><Wallet size={16}/> Ví</button><button onClick={()=>setEnroll(true)}>Đăng ký tài xế</button></div>
+      <Feedback error={error||current.error||vehicles.error||history.error||wallet.error} loading={current.loading&&!ride}/>
+      {tab==="wallet"?<section><h2>GoRide Wallet</h2><div className="driver-stats"><div><span>Số dư</span><strong>{money(wallet.data?.balance)}</strong></div><div><span>Đang chờ nạp</span><strong>{wallet.data?.pendingTopUps.length??0}</strong></div></div>
+        <form className="live-form" onSubmit={topUp}><label>Số tiền nạp<input name="amount" type="number" min={10000} max={100000000} step={1000} defaultValue={100000} required/></label><button className="primary-button" disabled={busy}>Tạo mã VietQR</button></form>
+        {topUpQr&&<QrPayment qr={topUpQr}/>}<h3>Lịch sử ví</h3>{wallet.data?.transactions.map(item=><div className="history-row" key={item.id}><strong>{labels[item.type]??item.type}</strong><span>{money(item.amount)}</span><small>{date(item.createdAt)}</small></div>)}</section>
+      :tab==="history"?<section><h2>Lịch sử chuyến</h2>{history.data?.length===0&&<p className="empty-copy">Chưa có chuyến đi.</p>}{history.data?.map(item=><button key={item.id} className="history-row" onClick={()=>setDetail(item)}><strong>{item.dropoffAddress}</strong><span>{labels[item.status]} · {money(item.finalFare??item.estimatedFare)}</span><small>{date(item.scheduledAt??item.requestedAt)}</small></button>)}</section>
       :ride?<section><h2>{labels[ride.status]}</h2><RideDetails ride={ride}/>{ride.driver&&<div className="driver-summary"><div className="driver-identity"><strong>{ride.driver.user.fullName}</strong><span>{ride.driver.ratingAvg}/5</span><a className="secondary-button" href={"tel:"+ride.driver.user.phone}>Gọi tài xế</a></div></div>}
+        {ride.payment?.method==="VIETQR"&&ride.payment.status==="PENDING"&&ride.payment.vietQr&&<QrPayment qr={ride.payment.vietQr}/>}
         {["SCHEDULED","SEARCHING_DRIVER","ACCEPTED","DRIVER_ARRIVING","ARRIVED"].includes(ride.status)&&<form className="live-form" onSubmit={cancel}><label>Lý do hủy<input name="reason" required minLength={3} maxLength={191}/></label><button className="secondary-button danger-text" disabled={busy}>Hủy chuyến</button></form>}</section>
       :<form onSubmit={book} className="live-form booking-form">
         <fieldset><legend>Chọn nhanh trên bản đồ</legend><div className="live-tabs"><label><input type="radio" name="mapTarget" checked={target==="pickup"} onChange={()=>setTarget("pickup")}/> Điểm đón</label><label><input type="radio" name="mapTarget" checked={target==="dropoff"} onChange={()=>setTarget("dropoff")}/> Điểm đến</label>{stops.map((_,index)=><label key={index}><input type="radio" name="mapTarget" checked={target===`stop-${index}`} onChange={()=>setTarget(`stop-${index}`)}/> Dừng {index+1}</label>)}</div></fieldset>
@@ -94,8 +102,9 @@ export function CustomerPortal(){
         <label className="check-label"><input type="checkbox" checked={scheduleEnabled} onChange={event=>{setScheduleEnabled(event.target.checked);if(!event.target.checked)setScheduledAt("");}}/><Clock3 size={17}/> Đặt xe theo lịch hẹn</label>
         {scheduleEnabled&&<label>Thời gian đón<input type="datetime-local" min={minSchedule} value={scheduledAt} onChange={event=>setScheduledAt(event.target.value)} required/></label>}
         <label>Loại xe<select value={vehicleId} onChange={event=>setVehicleId(event.target.value)} required><option value="">Chọn loại xe</option>{vehicles.data?.map(vehicle=><option value={vehicle.id} key={vehicle.id}>{vehicle.name} · {vehicle.capacity} chỗ</option>)}</select></label>
-        <label>Mã khuyến mãi<input value={promo} onChange={event=>setPromo(event.target.value.toUpperCase())} maxLength={40}/></label><p>Thanh toán: Tiền mặt</p>
-        {estimate&&<div className="booking-total"><div><span>Giá dự kiến · {estimate.distanceKm} km · {estimate.durationMin} phút · {estimate.routeProvider.toUpperCase()}</span><strong>{money(estimate.finalFare)}</strong><span>Phí dừng {money(estimate.stopFee)} · Giảm {money(estimate.discount)}{estimate.trafficAware?" · ETA theo giao thông":""}</span></div></div>}
+        <label>Mã khuyến mãi<input value={promo} onChange={event=>setPromo(event.target.value.toUpperCase())} maxLength={40}/></label>
+        <label>Thanh toán<select value={paymentMethod} onChange={event=>setPaymentMethod(event.target.value as typeof paymentMethod)}><option value="CASH">Tiền mặt</option><option value="WALLET">GoRide Wallet · {money(wallet.data?.balance)}</option><option value="VIETQR">VietQR</option></select></label>
+        {estimate&&<div className="booking-total"><div><span>Giá dự kiến · {estimate.distanceKm} km · {estimate.durationMin} phút · {estimate.routeProvider.toUpperCase()}</span><strong>{money(estimate.finalFare)}</strong><span>Phí dừng {money(estimate.stopFee)} · Phụ phí {money(estimate.surchargeAmount)} · Giảm {money(estimate.discount)}{estimate.trafficAware?" · ETA theo giao thông":""}</span>{estimate.surchargeBreakdown.map(item=><small key={item.ruleId}>{item.name}: {money(item.amount)}</small>)}</div></div>}
         <button className="primary-button booking-submit" disabled={busy||!vehicleId||!!current.error||current.loading}><CarFront size={18}/>{busy?"Đang xử lý...":estimate?(scheduleEnabled?"Xác nhận lịch hẹn":"Đặt xe"):"Tính giá & lộ trình"}</button>
       </form>}
     </section>
@@ -103,4 +112,8 @@ export function CustomerPortal(){
     {detail&&<Modal title="Chi tiết chuyến" close={()=>setDetail(null)}><RideDetails ride={detail}/>{detail.status==="COMPLETED"&&!detail.rating&&<form className="live-form" onSubmit={rate}><label>Đánh giá<select name="score">{[5,4,3,2,1].map(number=><option key={number}>{number}</option>)}</select></label><label>Nhận xét<input name="comment" maxLength={191}/></label><Feedback error={error}/><button className="primary-button" disabled={busy}><Star size={17}/> Gửi đánh giá</button></form>}</Modal>}
     {enroll&&<Modal title="Đăng ký tài xế" close={()=>setEnroll(false)}><form className="live-form" onSubmit={enrollDriver}><label>Số giấy phép lái xe<input name="licenseNumber" required minLength={4} maxLength={40}/></label><label>Số CCCD<input name="identityNumber" required minLength={6} maxLength={30}/></label><label>Loại xe<select name="vehicleTypeId" required>{vehicles.data?.map(vehicle=><option key={vehicle.id} value={vehicle.id}>{vehicle.name}</option>)}</select></label><label>Biển số<input name="plateNumber" required minLength={5} maxLength={20}/></label><label>Mẫu xe<input name="model" required maxLength={80}/></label><Feedback error={error}/><button className="primary-button" disabled={busy}>Gửi hồ sơ</button></form></Modal>}
   </div>;
+}
+
+function QrPayment({qr}:{qr:VietQr}){
+  return <div className="qr-payment"><img src={qr.qrUrl} alt={`VietQR ${qr.reference}`}/><div><strong>{money(qr.amount)}</strong><span>{qr.accountName} · {qr.accountNumber}</span><code>{qr.reference}</code><small>Hết hạn {date(qr.expiresAt)}</small></div></div>;
 }

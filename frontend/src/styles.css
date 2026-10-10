@@ -1032,6 +1032,38 @@ a {
   font-size: 21px;
 }
 
+.qr-payment {
+  display: grid;
+  grid-template-columns: minmax(140px, 190px) 1fr;
+  gap: 1rem;
+  align-items: center;
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--line, #dce5e1);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.qr-payment img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: contain;
+}
+
+.qr-payment > div {
+  display: grid;
+  gap: .45rem;
+  min-width: 0;
+}
+
+.qr-payment strong { font-size: 1.35rem; }
+.qr-payment code { overflow-wrap: anywhere; }
+
+@media (max-width: 560px) {
+  .qr-payment { grid-template-columns: 1fr; }
+  .qr-payment img { max-width: 220px; margin: auto; }
+}
+
 /* Driver portal */
 .driver-map-status {
   position: absolute;

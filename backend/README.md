@@ -71,6 +71,47 @@ MATCHING_MAX_WAIT_SECONDS=180
 
 Public Photon va OSRM phu hop development/demo. Production nen dung instance rieng hoac nha cung cap co SLA.
 
+## Thanh toan, vi va phu phi
+
+He thong ho tro `CASH`, `WALLET` va `VIETQR` (gia tri `CARD` duoc giu trong schema de tuong thich nhung chua mo).
+
+- `POST /api/customers/me/wallet/top-ups`: tao lenh nap vi va tra ve URL anh VietQR.
+- `GET /api/customers/me/wallet`: so du, lich su giao dich va lenh nap dang cho.
+- `POST /api/rides` voi `paymentMethod=WALLET`: tru vi trong cung transaction tao chuyen.
+- `POST /api/rides` voi `paymentMethod=VIETQR`: tao payment `PENDING` va tra `payment.vietQr`.
+- `GET /api/payments/rides/:id`: xem trang thai payment va thong tin QR.
+- `POST /api/payments/vietqr/ipn`: IPN cong khai, xac thuc HMAC va chong xu ly trung theo transaction ID.
+- `GET /api/drivers/me/wallet`: bang ke gross fare, hoa hong, tien mat tai xe da thu va so du kha dung.
+- `POST /api/drivers/me/withdrawals`: tao yeu cau va giu so du trong `pendingBalance`.
+- `GET /api/admin/withdrawals`, `POST /api/admin/withdrawals/:id/approve|reject`: quy trinh duyet rut tien. Chi approve moi tru `balance`.
+
+Chu ky IPN la HMAC-SHA256 (hex) cua chuoi:
+
+```text
+transactionId|reference|amount|paidAt
+```
+
+voi `VIETQR_WEBHOOK_SECRET`. Vi du body:
+
+```json
+{
+  "transactionId": "BANK-20261011-001",
+  "reference": "RIDE...",
+  "amount": 85000,
+  "paidAt": "2026-10-11T10:30:00.000Z",
+  "signature": "<64 hex chars>"
+}
+```
+
+IPN cap nhat `payment.status=PAID`; `ride.status` van la trang thai van hanh cua cuoc xe. Giao dich vi khach duoc hoan tu dong neu khach/tai xe/admin huy hoac khong tim thay tai xe. Chuyen VietQR da thanh toan khi bi huy duoc hoan vao GoRide Wallet (khong chuyen nguoc ve ngan hang trong phase nay).
+
+Phu phi duoc snapshot vao chuyen (`surchargeAmount`, `surchargeBreakdown`) khi bao gia:
+
+- Seed mac dinh: cao diem sang/chieu ngay thuong, dem 22:00-05:00, mua va ngap.
+- `GET|POST|PATCH /api/admin/surcharges`: quan ly rule theo loai xe, khung gio, thu trong tuan va thoi tiet.
+- `GET|PATCH /api/admin/surcharges/context/weather`: cap nhat trang thai `NORMAL|RAIN|HEAVY_RAIN|FLOOD` de engine gia tu dong ap dung.
+- Mui gio tinh phu phi la `Asia/Ho_Chi_Minh`; lich hen dung thoi diem du kien don khach.
+
 ## Migration va seed
 
 ```powershell

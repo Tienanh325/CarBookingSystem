@@ -10,6 +10,8 @@ import {
   updateDriverSchema,
   updateLocationSchema
 } from "./driver.schemas";
+import * as walletController from "../wallets/wallet.controller";
+import { createWithdrawalSchema } from "../wallets/wallet.schemas";
 
 export const driverRouter = Router();
 
@@ -26,6 +28,8 @@ driverRouter.post("/me/offline", controller.goOffline);
 driverRouter.post("/me/location", validate({ body: updateLocationSchema }), controller.updateLocation);
 driverRouter.get("/me/ride-requests", controller.listRideRequests);
 driverRouter.get("/me/earnings", controller.getEarnings);
+driverRouter.get("/me/wallet", walletController.getDriverWallet);
+driverRouter.post("/me/withdrawals", validate({ body: createWithdrawalSchema }), walletController.createWithdrawal);
 
 driverRouter.post("/rides/:id/accept", validate({ params: rideParamSchema }), controller.acceptRide);
 driverRouter.post("/rides/:id/reject", validate({ params: rideParamSchema }), controller.rejectRide);

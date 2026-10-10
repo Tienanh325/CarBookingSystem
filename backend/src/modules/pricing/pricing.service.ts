@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { ApiError } from "../../utils/api-error";
-import { calculateFare } from "./pricing.utils";
+import { calculateFare, calculateSurcharges } from "./pricing.utils";
 import { validatePromotionForFare } from "../promotions/promotion.service";
 import { getRoadRoute } from "../../integrations/routing.service";
 
@@ -62,7 +62,29 @@ export async function estimateRide(input: {
     (sum, stop) => sum + (stop.dwellMinutes ?? 5) * Number(pricingRule?.waitingFeePerMinute ?? 0),
     0
   ));
-  const estimatedFare = calculateFare(rule, distanceKm, route.durationMin) + stopFee;
+  const fareBeforeSurcharge = calculateFare(rule, distanceKm, route.durationMin) + stopFee;
+  const effectiveAt = input.scheduledAt ?? now;
+  const [surchargeRules, pricingContext] = await Promise.all([
+    db.surchargeRule.findMany({
+      where: {
+        isActive: true,
+        OR: [{ vehicleTypeId: null }, { vehicleTypeId: input.vehicleTypeId }],
+        activeFrom: { lte: effectiveAt },
+        AND: [{ OR: [{ activeTo: null }, { activeTo: { gte: effectiveAt } }] }]
+      }
+    }),
+    db.pricingContext.findUnique({ where: { id: "GLOBAL" } })
+  ]);
+  const surcharge = calculateSurcharges(
+    fareBeforeSurcharge,
+    surchargeRules.map((item) => ({
+      ...item,
+      multiplier: Number(item.multiplier),
+      fixedAmount: Number(item.fixedAmount)
+    })),
+    { at: effectiveAt, weatherCondition: pricingContext?.weatherCondition ?? "NORMAL" }
+  );
+  const estimatedFare = fareBeforeSurcharge + surcharge.amount;
   let discount = 0;
   let promotionId: string | undefined;
   let finalFare = estimatedFare;
@@ -83,11 +105,39 @@ export async function estimateRide(input: {
     finalFare,
     promotionId,
     stopFee,
+    fareBeforeSurcharge,
+    surchargeAmount: surcharge.amount,
+    surchargeBreakdown: surcharge.applied,
+    weatherCondition: pricingContext?.weatherCondition ?? "NORMAL",
     routeGeometry: route.geometry,
     routeProvider: route.provider,
     trafficAware: route.trafficAware,
     legs: route.legs
   };
+}
+
+export async function listSurchargeRules() {
+  return prisma.surchargeRule.findMany({ include: { vehicleType: true }, orderBy: { createdAt: "desc" } });
+}
+
+export async function createSurchargeRule(input: Prisma.SurchargeRuleUncheckedCreateInput) {
+  return prisma.surchargeRule.create({ data: input });
+}
+
+export async function updateSurchargeRule(id: string, input: Prisma.SurchargeRuleUncheckedUpdateInput) {
+  return prisma.surchargeRule.update({ where: { id }, data: input });
+}
+
+export async function getPricingContext() {
+  return prisma.pricingContext.upsert({ where: { id: "GLOBAL" }, create: { id: "GLOBAL" }, update: {} });
+}
+
+export async function updateWeatherCondition(weatherCondition: "NORMAL" | "RAIN" | "HEAVY_RAIN" | "FLOOD") {
+  return prisma.pricingContext.upsert({
+    where: { id: "GLOBAL" },
+    create: { id: "GLOBAL", weatherCondition },
+    update: { weatherCondition }
+  });
 }
 
 export async function listPricingRules() {

@@ -10,6 +10,8 @@ import { prisma } from "../config/prisma";
 import { asyncHandler } from "../utils/async-handler";
 import { ok } from "../utils/response";
 import { mapRouter } from "../modules/maps/map.routes";
+import { paymentRouter } from "../modules/payments/payment.routes";
+import { surchargeRouter } from "../modules/pricing/surcharge.routes";
 
 export const apiRouter = Router();
 apiRouter.get("/vehicle-types", asyncHandler(async (_req, res) => {
@@ -21,6 +23,8 @@ apiRouter.use("/customers", customerRouter);
 apiRouter.use("/drivers", driverRouter);
 apiRouter.use("/rides", rideRouter);
 apiRouter.use("/maps", mapRouter);
+apiRouter.use("/payments", paymentRouter);
 apiRouter.use("/admin", adminRouter);
 apiRouter.use("/admin/pricing-rules", pricingRouter);
+apiRouter.use("/admin/surcharges", surchargeRouter);
 apiRouter.use("/promotions", promotionRouter);

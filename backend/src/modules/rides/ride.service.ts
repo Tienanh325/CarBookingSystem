@@ -4,6 +4,9 @@ import { ApiError } from "../../utils/api-error";
 import type { RoleName } from "../../utils/roles";
 import { estimateRide } from "../pricing/pricing.service";
 import { notifyRide } from "../../realtime/socket";
+import { env } from "../../config/env";
+import { createRidePayment, refundCustomerWalletRide } from "../wallets/wallet.service";
+import { createVietQrDetails } from "../payments/payment.service";
 
 export const activeRideStatuses: RideStatus[] = ["REQUESTED","SEARCHING_DRIVER","ACCEPTED","DRIVER_ARRIVING","ARRIVED","IN_PROGRESS"];
 export const visibleRideStatuses: RideStatus[] = ["SCHEDULED", ...activeRideStatuses];
@@ -17,7 +20,9 @@ type Point = { address:string; lat:number; lng:number };
 type Stop = Point & { dwellMinutes?:number };
 type Input = { pickup:Point; dropoff:Point; stops?:Stop[]; vehicleTypeId:string; promotionCode?:string; paymentMethod:PaymentMethod; scheduledAt?:Date };
 export async function createRide(customerId:string, input:Input) {
-  if(input.paymentMethod !== "CASH") throw new ApiError(422,"PAYMENT_NOT_CONFIGURED","Hien tai chi ho tro tien mat");
+  if(!["CASH", "WALLET", "VIETQR"].includes(input.paymentMethod)) {
+    throw new ApiError(422,"PAYMENT_NOT_CONFIGURED","Phuong thuc thanh toan chua duoc ho tro");
+  }
   const now = new Date();
   const scheduledAt = input.scheduledAt ? new Date(input.scheduledAt) : undefined;
   if (scheduledAt && scheduledAt.getTime() < now.getTime() + 10 * 60_000) throw new ApiError(422,"SCHEDULE_TOO_SOON","Thoi gian hen phai cach hien tai it nhat 10 phut");
@@ -32,12 +37,21 @@ export async function createRide(customerId:string, input:Input) {
       if(promo) await tx.promotion.update({where:{id:promo.id},data:{updatedAt:new Date()}});
     }
     const estimate = await estimateRide(input,customerId,tx);
-    const created = await tx.ride.create({data:{customerId,vehicleTypeId:input.vehicleTypeId,pickupAddress:input.pickup.address,pickupLat:input.pickup.lat,pickupLng:input.pickup.lng,dropoffAddress:input.dropoff.address,dropoffLat:input.dropoff.lat,dropoffLng:input.dropoff.lng,estimatedDistanceKm:estimate.distanceKm,estimatedDurationMin:estimate.durationMin,estimatedFare:estimate.finalFare,stopFee:estimate.stopFee,promotionId:estimate.promotionId,paymentMethod:"CASH",status,scheduledAt,matchingStartedAt:scheduledAt?undefined:now,routeGeometry:estimate.routeGeometry,routeProvider:estimate.routeProvider,stops:{create:(input.stops??[]).map((stop,index)=>({orderIndex:index,address:stop.address,lat:stop.lat,lng:stop.lng,dwellMinutes:stop.dwellMinutes??5,fee:(stop.dwellMinutes??5)*Number(estimate.stopFee/(input.stops?.reduce((sum,item)=>sum+(item.dwellMinutes??5),0)||1))}))},statusLogs:{create:{toStatus:status,changedById:customerId}}},include:rideInclude});
+    const created = await tx.ride.create({data:{customerId,vehicleTypeId:input.vehicleTypeId,pickupAddress:input.pickup.address,pickupLat:input.pickup.lat,pickupLng:input.pickup.lng,dropoffAddress:input.dropoff.address,dropoffLat:input.dropoff.lat,dropoffLng:input.dropoff.lng,estimatedDistanceKm:estimate.distanceKm,estimatedDurationMin:estimate.durationMin,estimatedFare:estimate.finalFare,stopFee:estimate.stopFee,surchargeAmount:estimate.surchargeAmount,surchargeBreakdown:estimate.surchargeBreakdown,commissionRate:env.platformCommissionRate,promotionId:estimate.promotionId,paymentMethod:input.paymentMethod,status,scheduledAt,matchingStartedAt:scheduledAt?undefined:now,routeGeometry:estimate.routeGeometry,routeProvider:estimate.routeProvider,stops:{create:(input.stops??[]).map((stop,index)=>({orderIndex:index,address:stop.address,lat:stop.lat,lng:stop.lng,dwellMinutes:stop.dwellMinutes??5,fee:(stop.dwellMinutes??5)*Number(estimate.stopFee/(input.stops?.reduce((sum,item)=>sum+(item.dwellMinutes??5),0)||1))}))},statusLogs:{create:{toStatus:status,changedById:customerId}}}});
     if(estimate.promotionId) await tx.promotionUsage.create({data:{promotionId:estimate.promotionId,userId:customerId,rideId:created.id,discount:estimate.discount}});
-    return created;
+    await createRidePayment(tx,{userId:customerId,rideId:created.id,amount:estimate.finalFare,method:input.paymentMethod});
+    return tx.ride.findUniqueOrThrow({where:{id:created.id},include:rideInclude});
   }, {isolationLevel:Prisma.TransactionIsolationLevel.ReadCommitted});
   await notifyRide(ride.id, status === "SCHEDULED" ? "ride.scheduled" : "ride.request.created");
-  return ride;
+  return {
+    ...ride,
+    payment: ride.payment ? {
+      ...ride.payment,
+      vietQr: ride.payment.method === "VIETQR" && ride.payment.paymentReference && ride.payment.expiresAt
+        ? createVietQrDetails(ride.payment.paymentReference, Number(ride.payment.amount), ride.payment.expiresAt)
+        : null
+    } : null
+  };
 }
 export async function estimateRideForCustomer(customerId:string,input:Omit<Input,"paymentMethod">) {return estimateRide(input,customerId);}
 type RideScope = "customer" | "driver";
@@ -75,6 +89,7 @@ export async function cancelRideByCustomer(id:string,customerId:string,reason:st
     if(ride.driverId) await tx.driverProfile.update({where:{id:ride.driverId},data:{onlineStatus:"ONLINE"}});
     await tx.rideStatusLog.create({data:{rideId:id,fromStatus:ride.status,toStatus:"CANCELLED_BY_CUSTOMER",changedById:customerId,note:reason}});
     await tx.promotionUsage.deleteMany({where:{rideId:id}});
+    await refundCustomerWalletRide(tx,id);
     await tx.driverOffer.updateMany({where:{rideId:id,status:"PENDING"},data:{status:"CANCELLED",respondedAt:new Date()}});
     return tx.ride.findUniqueOrThrow({where:{id},include:rideInclude});
   });

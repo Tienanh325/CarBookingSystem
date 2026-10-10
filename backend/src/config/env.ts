@@ -30,10 +30,21 @@ export const env = {
   geocodingBaseUrl: process.env.GEOCODING_BASE_URL ?? "https://photon.komoot.io",
   matchingOfferSeconds: readNumber("MATCHING_OFFER_SECONDS", 20),
   matchingLeadMinutes: readNumber("SCHEDULE_MATCH_LEAD_MINUTES", 30),
-  matchingMaxWaitSeconds: readNumber("MATCHING_MAX_WAIT_SECONDS", 180)
+  matchingMaxWaitSeconds: readNumber("MATCHING_MAX_WAIT_SECONDS", 180),
+  platformCommissionRate: readNumber("PLATFORM_COMMISSION_RATE", 0.2),
+  vietQrBankBin: process.env.VIETQR_BANK_BIN ?? "970422",
+  vietQrAccountNumber: process.env.VIETQR_ACCOUNT_NUMBER ?? "0000000000",
+  vietQrAccountName: process.env.VIETQR_ACCOUNT_NAME ?? "GORIDE",
+  vietQrTemplate: process.env.VIETQR_TEMPLATE ?? "compact2",
+  vietQrWebhookSecret: process.env.VIETQR_WEBHOOK_SECRET ?? "dev-vietqr-secret-change-me",
+  vietQrPaymentTtlMinutes: readNumber("VIETQR_PAYMENT_TTL_MINUTES", 15)
 };
 
 export const isProduction = env.nodeEnv === "production";
+
+if (env.platformCommissionRate < 0 || env.platformCommissionRate >= 1) {
+  throw new Error("PLATFORM_COMMISSION_RATE must be between 0 and 1");
+}
 
 if (isProduction) {
   if (!env.databaseUrl) throw new Error("DATABASE_URL is required in production");
@@ -42,5 +53,8 @@ if (isProduction) {
   }
   if (!env.appOrigins.length || env.appOrigins.includes("*")) {
     throw new Error("APP_ORIGIN must contain explicit production origins");
+  }
+  if (env.vietQrWebhookSecret.length < 32 || env.vietQrWebhookSecret.includes("change-me")) {
+    throw new Error("VIETQR_WEBHOOK_SECRET must be a strong production secret");
   }
 }

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { estimateSchema } from "../pricing/pricing.schemas";
 
 export const createRideSchema = estimateSchema.extend({
-  paymentMethod: z.enum(["CASH", "CARD", "WALLET"]).default("CASH")
+  paymentMethod: z.enum(["CASH", "CARD", "WALLET", "VIETQR"]).default("CASH")
 });
 
 export const rideParamSchema = z.object({

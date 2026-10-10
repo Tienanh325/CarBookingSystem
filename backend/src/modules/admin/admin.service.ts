@@ -2,6 +2,7 @@ import { DriverOnlineStatus, DriverVerificationStatus, PaymentStatus, RideStatus
 import { prisma } from "../../config/prisma";
 import { ApiError } from "../../utils/api-error";
 import { notifyRide } from "../../realtime/socket";
+import { refundCustomerWalletRide } from "../wallets/wallet.service";
 
 type ListQuery = {
   search?: string;
@@ -331,6 +332,8 @@ export async function cancelRide(id: string, reason: string, actorId: string) {
       }
     });
 
+    await refundCustomerWalletRide(tx, id);
+
     await tx.auditLog.create({
       data: {
         actorId,
@@ -370,7 +373,7 @@ export async function listPayments(query: ListQuery) {
 }
 
 export async function revenueReport() {
-  const [paid, pending, byMethod] = await Promise.all([
+  const [paid, pending, byMethod, commissions, driverEarnings] = await Promise.all([
     prisma.payment.aggregate({
       where: { status: PaymentStatus.PAID },
       _sum: { amount: true },
@@ -386,6 +389,15 @@ export async function revenueReport() {
       where: { status: PaymentStatus.PAID },
       _sum: { amount: true },
       _count: true
+    }),
+    prisma.walletTransaction.aggregate({
+      where: { type: "COMMISSION", status: "COMPLETED" },
+      _sum: { amount: true },
+      _count: true
+    }),
+    prisma.walletTransaction.aggregate({
+      where: { type: "RIDE_EARNING", status: "COMPLETED" },
+      _sum: { amount: true }
     })
   ]);
 
@@ -398,6 +410,11 @@ export async function revenueReport() {
       count: pending._count,
       amount: Number(pending._sum.amount ?? 0)
     },
+    platformCommission: {
+      count: commissions._count,
+      amount: Math.abs(Number(commissions._sum.amount ?? 0))
+    },
+    driverGrossEarnings: Number(driverEarnings._sum.amount ?? 0),
     byMethod: byMethod.map((item) => ({
       method: item.method,
       count: item._count,

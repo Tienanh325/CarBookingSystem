@@ -3,6 +3,7 @@ import { env } from "../../config/env";
 import { prisma } from "../../config/prisma";
 import { emitAdmin, emitToUser, notifyRide } from "../../realtime/socket";
 import { haversineDistanceKm } from "../../utils/geo";
+import { refundCustomerWalletRide } from "../wallets/wallet.service";
 
 const RADII_KM = [1, 3, 5] as const;
 let processing = false;
@@ -82,9 +83,15 @@ export async function dispatchRide(rideId: string) {
   const selected = ranked.find(candidate => candidate.distanceKm <= radiusKm);
   if (!selected) {
     if (waitedSeconds >= env.matchingMaxWaitSeconds) {
-      const changed = await prisma.ride.updateMany({ where: { id: rideId, status: "SEARCHING_DRIVER", driverId: null }, data: { status: "NO_DRIVER_FOUND" } });
-      if (changed.count) {
-        await prisma.rideStatusLog.create({ data: { rideId, fromStatus: "SEARCHING_DRIVER", toStatus: "NO_DRIVER_FOUND", note: "Khong co tai xe trong ban kinh 5 km" } });
+      const changed = await prisma.$transaction(async (tx) => {
+        const result = await tx.ride.updateMany({ where: { id: rideId, status: "SEARCHING_DRIVER", driverId: null }, data: { status: "NO_DRIVER_FOUND" } });
+        if (!result.count) return false;
+        await tx.rideStatusLog.create({ data: { rideId, fromStatus: "SEARCHING_DRIVER", toStatus: "NO_DRIVER_FOUND", note: "Khong co tai xe trong ban kinh 5 km" } });
+        await tx.promotionUsage.deleteMany({ where: { rideId } });
+        await refundCustomerWalletRide(tx, rideId);
+        return true;
+      });
+      if (changed) {
         await notifyRide(rideId, "ride.no-driver");
       }
     }
