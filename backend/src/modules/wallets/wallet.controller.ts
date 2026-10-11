@@ -48,3 +48,25 @@ export const rejectWithdrawal = asyncHandler(async (req: Request, res: Response)
     )
   );
 });
+
+export const listRefunds = asyncHandler(async (req: Request, res: Response) => {
+  res.json(ok(await service.listRefunds(req.query as never)));
+});
+
+export const approveRefund = asyncHandler(async (req: Request, res: Response) => {
+  res.json(
+    ok(
+      await service.reviewRefund(req.params.id as string, req.auth!.userId, true),
+      "Duyet hoan tien thanh cong"
+    )
+  );
+});
+
+export const rejectRefund = asyncHandler(async (req: Request, res: Response) => {
+  res.json(
+    ok(
+      await service.reviewRefund(req.params.id as string, req.auth!.userId, false, req.body.reason),
+      "Tu choi hoan tien thanh cong"
+    )
+  );
+});

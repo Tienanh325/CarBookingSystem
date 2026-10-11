@@ -225,8 +225,20 @@ export function CustomerPortal() {
             <h2>GoRide Wallet</h2>
             <div className="driver-stats">
               <div>
-                <span>Số dư</span>
-                <strong>{money(wallet.data?.balance)}</strong>
+                <span>Khả dụng</span>
+                <strong>{money(wallet.data?.availableBalance)}</strong>
+              </div>
+              <div>
+                <span>Đang giữ</span>
+                <strong>{money(wallet.data?.heldBalance)}</strong>
+              </div>
+              <div>
+                <span>Chờ quyết toán</span>
+                <strong>{money(wallet.data?.pendingSettlement)}</strong>
+              </div>
+              <div>
+                <span>Phải thu</span>
+                <strong>{money(wallet.data?.platformReceivable)}</strong>
               </div>
               <div>
                 <span>Đang chờ nạp</span>
@@ -436,7 +448,7 @@ export function CustomerPortal() {
                 onChange={(event) => setPaymentMethod(event.target.value as typeof paymentMethod)}
               >
                 <option value="CASH">Tiền mặt</option>
-                <option value="WALLET">GoRide Wallet · {money(wallet.data?.balance)}</option>
+                <option value="WALLET">GoRide Wallet · {money(wallet.data?.availableBalance)}</option>
                 <option value="VIETQR">VietQR</option>
               </select>
             </label>

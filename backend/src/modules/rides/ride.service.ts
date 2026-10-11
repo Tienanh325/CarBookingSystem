@@ -250,14 +250,15 @@ export async function cancelRideByCustomer(id: string, customerId: string, reaso
       }
     });
     await tx.promotionUsage.deleteMany({ where: { rideId: id } });
-    const settlement = await settleCancelledRidePayment(tx, id, cancellationFee);
+    const settlement = await settleCancelledRidePayment(tx, id, cancellationFee, customerId);
     if (cancellationFee > 0 && settlement.collected && ride.driverId)
       await settleDriverRide(tx, {
         rideId: id,
         driverId: ride.driverId,
         grossFare: cancellationFee,
         paymentMethod: ride.paymentMethod,
-        commissionRate: Number(ride.commissionRate)
+        commissionRate: Number(ride.commissionRate),
+        actorId: customerId
       });
     await tx.driverOffer.updateMany({
       where: { rideId: id, status: "PENDING" },

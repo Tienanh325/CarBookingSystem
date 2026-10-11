@@ -6,11 +6,13 @@ import {
   ChevronLeft,
   ChevronRight,
   CloudRain,
+  Download,
   Eye,
   LayoutDashboard,
   Pencil,
   Plus,
   RefreshCw,
+  RotateCcw,
   Route,
   Search,
   Tags,
@@ -20,7 +22,7 @@ import {
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Feedback, Modal, RideDetails } from "../components/LiveUI";
 import { StatusBadge } from "../components/StatusBadge";
-import { apiRequest, mutate } from "../services/api";
+import { apiRequest, downloadFile, mutate } from "../services/api";
 import { useResource } from "../services/live";
 import {
   date,
@@ -30,6 +32,9 @@ import {
   type Page,
   type Pricing,
   type Promotion,
+  type ReconciliationItem,
+  type ReconciliationRun,
+  type RefundRequest,
   type Ride,
   type User,
   type VehicleType,
@@ -45,7 +50,10 @@ type Section =
   | "promotions"
   | "users"
   | "payments"
-  | "withdrawals";
+  | "withdrawals"
+  | "refunds"
+  | "reconciliation"
+  | "reports";
 const menus = [
   { id: "overview", name: "Tổng quan", icon: LayoutDashboard },
   { id: "rides", name: "Chuyến đi", icon: Route },
@@ -55,8 +63,16 @@ const menus = [
   { id: "promotions", name: "Khuyến mãi", icon: Tags },
   { id: "users", name: "Tài khoản", icon: UsersRound },
   { id: "payments", name: "Thanh toán", icon: Wallet },
-  { id: "withdrawals", name: "Rút tiền", icon: Banknote }
+  { id: "withdrawals", name: "Rút tiền", icon: Banknote },
+  { id: "refunds", name: "Hoàn tiền", icon: RotateCcw },
+  { id: "reconciliation", name: "Đối soát", icon: RefreshCw },
+  { id: "reports", name: "Báo cáo CSV", icon: Download }
 ] as const;
+
+function vietnamToday() {
+  return new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
 function Badge({ status }: { status: string }) {
   return (
     <StatusBadge
@@ -148,6 +164,12 @@ export function AdminPortal() {
             <PromotionsView />
           ) : section === "withdrawals" ? (
             <WithdrawalView />
+          ) : section === "refunds" ? (
+            <RefundView />
+          ) : section === "reconciliation" ? (
+            <ReconciliationView />
+          ) : section === "reports" ? (
+            <FinanceReportView />
           ) : (
             <RecordsView key={section} section={section} />
           )}
@@ -779,6 +801,312 @@ function WithdrawalView() {
         </table>
       </div>
       <Pager page={page} total={resource.data?.total ?? 0} change={setPage} />
+    </section>
+  );
+}
+
+function RefundView() {
+  const [status, setStatus] = useState("PENDING"),
+    [page, setPage] = useState(1),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false);
+  const resource = useResource<Page<RefundRequest>>(
+    `/admin/refunds?${new URLSearchParams({ status, page: String(page), limit: "10" })}`
+  );
+  async function review(item: RefundRequest, approve: boolean) {
+    const reason = approve ? undefined : window.prompt("Lý do từ chối hoàn tiền:");
+    if (!approve && !reason) return;
+    setBusy(true);
+    setError("");
+    try {
+      await mutate(`/admin/refunds/${item.id}/${approve ? "approve" : "reject"}`, approve ? {} : { reason });
+      await resource.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section>
+      <div className="filter-bar">
+        <select
+          className="select-control"
+          value={status}
+          onChange={(event) => {
+            setStatus(event.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">Tất cả</option>
+          <option value="PENDING">Chờ duyệt</option>
+          <option value="APPROVED">Đã duyệt</option>
+          <option value="REJECTED">Từ chối</option>
+        </select>
+        <IconAction label="Làm mới" onClick={() => void resource.reload()}>
+          <RefreshCw size={18} />
+        </IconAction>
+      </div>
+      <Feedback error={error || resource.error} loading={resource.loading} />
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Khách hàng</th>
+              <th>Giao dịch</th>
+              <th>Số tiền</th>
+              <th>Trạng thái</th>
+              <th>Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {resource.data?.items.map((item) => (
+              <tr key={item.id}>
+                <td>
+                  <strong>{item.payment.customer.fullName}</strong>
+                  <small className="record-id">{item.payment.customer.phone}</small>
+                </td>
+                <td>
+                  {item.reason}
+                  <small className="record-id">
+                    {item.payment.rideId.slice(0, 8)} · {date(item.createdAt)}
+                  </small>
+                </td>
+                <td>{money(item.amount)}</td>
+                <td>
+                  <Badge status={item.status} />
+                </td>
+                <td>
+                  {item.status === "PENDING" && (
+                    <div className="dual-actions">
+                      <button
+                        className="primary-button"
+                        disabled={busy}
+                        onClick={() => void review(item, true)}
+                      >
+                        Duyệt
+                      </button>
+                      <button
+                        className="secondary-button danger-text"
+                        disabled={busy}
+                        onClick={() => void review(item, false)}
+                      >
+                        Từ chối
+                      </button>
+                    </div>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Pager page={page} total={resource.data?.total ?? 0} change={setPage} />
+    </section>
+  );
+}
+
+function ReconciliationView() {
+  const [status, setStatus] = useState("REVIEW_REQUIRED"),
+    [classification, setClassification] = useState(""),
+    [page, setPage] = useState(1),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false);
+  const itemQuery = new URLSearchParams({ page: String(page), limit: "10" });
+  if (status) itemQuery.set("status", status);
+  if (classification) itemQuery.set("classification", classification);
+  const items = useResource<Page<ReconciliationItem>>(`/admin/reconciliation/items?${itemQuery}`);
+  const runs = useResource<Page<ReconciliationRun>>("/admin/reconciliation/runs?page=1&limit=5");
+  async function runNow() {
+    setBusy(true);
+    setError("");
+    try {
+      await mutate("/admin/reconciliation/run");
+      await Promise.all([items.reload(), runs.reload()]);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function resolve(item: ReconciliationItem, action: "ACCEPT" | "IGNORE") {
+    const note = window.prompt(
+      action === "ACCEPT" ? "Ghi chú chấp nhận giao dịch:" : "Lý do bỏ qua giao dịch:"
+    );
+    if (!note) return;
+    setBusy(true);
+    setError("");
+    try {
+      await mutate(`/admin/reconciliation/items/${item.id}/resolve`, { action, note });
+      await items.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section>
+      <div className="filter-bar">
+        <select
+          value={classification}
+          onChange={(event) => {
+            setClassification(event.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">Mọi phân loại</option>
+          {["EXACT", "UNDERPAID", "OVERPAID", "REFERENCE_NOT_FOUND", "DUPLICATE", "EXPIRED"].map((item) => (
+            <option value={item} key={item}>
+              {labels[item]}
+            </option>
+          ))}
+        </select>
+        <select
+          value={status}
+          onChange={(event) => {
+            setStatus(event.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">Mọi trạng thái</option>
+          {["MATCHED", "REVIEW_REQUIRED", "RESOLVED", "IGNORED"].map((item) => (
+            <option value={item} key={item}>
+              {labels[item]}
+            </option>
+          ))}
+        </select>
+        <button className="primary-button" disabled={busy} onClick={() => void runNow()}>
+          <RefreshCw size={17} /> Chạy đối soát
+        </button>
+      </div>
+      <Feedback error={error || items.error || runs.error} loading={items.loading || runs.loading} />
+      {runs.data?.items[0] && (
+        <p className="empty-copy">
+          Lần gần nhất: {date(runs.data.items[0].startedAt)} · {runs.data.items[0].fetchedCount} giao dịch ·{" "}
+          {runs.data.items[0].exceptionCount} ngoại lệ
+        </p>
+      )}
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Reference</th>
+              <th>Số tiền</th>
+              <th>Phân loại</th>
+              <th>Trạng thái</th>
+              <th>Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.data?.items.map((item) => (
+              <tr key={item.id}>
+                <td>
+                  <strong>{item.paymentReference}</strong>
+                  <small className="record-id">
+                    {item.providerTransactionId} · {item.source}
+                  </small>
+                </td>
+                <td>
+                  {money(item.amount)}
+                  {item.expectedAmount && (
+                    <small className="record-id">Dự kiến {money(item.expectedAmount)}</small>
+                  )}
+                </td>
+                <td>
+                  <Badge status={item.classification} />
+                </td>
+                <td>
+                  <Badge status={item.reconciliationStatus} />
+                </td>
+                <td>
+                  {item.reconciliationStatus === "REVIEW_REQUIRED" && (
+                    <div className="dual-actions">
+                      {!["REFERENCE_NOT_FOUND", "DUPLICATE"].includes(item.classification) && (
+                        <button
+                          className="primary-button"
+                          disabled={busy}
+                          onClick={() => void resolve(item, "ACCEPT")}
+                        >
+                          Chấp nhận
+                        </button>
+                      )}
+                      <button
+                        className="secondary-button"
+                        disabled={busy}
+                        onClick={() => void resolve(item, "IGNORE")}
+                      >
+                        Bỏ qua
+                      </button>
+                    </div>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Pager page={page} total={items.data?.total ?? 0} change={setPage} />
+    </section>
+  );
+}
+
+function FinanceReportView() {
+  const [period, setPeriod] = useState<"day" | "month">("day"),
+    [reportDate, setReportDate] = useState(vietnamToday),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false);
+  async function download(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const value = period === "month" ? reportDate.slice(0, 7) : reportDate;
+      const file = await downloadFile(
+        `/admin/reports/finance.csv?${new URLSearchParams({ period, date: value })}`
+      );
+      const url = URL.createObjectURL(file.blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = file.filename;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section className="records-section">
+      <h2>Xuất báo cáo tài chính</h2>
+      <p className="empty-copy">
+        Báo cáo gồm doanh thu, hoa hồng, tiền mặt, nạp ví, hoàn tiền và rút tiền theo múi giờ Việt Nam.
+      </p>
+      <form className="live-form" onSubmit={download}>
+        <label>
+          Chu kỳ
+          <select value={period} onChange={(event) => setPeriod(event.target.value as "day" | "month")}>
+            <option value="day">Theo ngày</option>
+            <option value="month">Theo tháng</option>
+          </select>
+        </label>
+        <label>
+          Ngày báo cáo
+          <input
+            type={period === "month" ? "month" : "date"}
+            value={period === "month" ? reportDate.slice(0, 7) : reportDate}
+            onChange={(event) =>
+              setReportDate(period === "month" ? `${event.target.value}-01` : event.target.value)
+            }
+            required
+          />
+        </label>
+        <Feedback error={error} />
+        <button className="primary-button" disabled={busy}>
+          <Download size={17} /> {busy ? "Đang tạo..." : "Tải CSV"}
+        </button>
+      </form>
     </section>
   );
 }

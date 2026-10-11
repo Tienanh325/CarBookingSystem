@@ -5,6 +5,7 @@ import { ROLES } from "../../utils/roles";
 import * as controller from "./admin.controller";
 import {
   adminCancelRideSchema,
+  financeReportSchema,
   idParamSchema,
   listQuerySchema,
   rejectDriverSchema,
@@ -18,10 +19,19 @@ import {
 } from "../promotions/promotion.schemas";
 import * as walletController from "../wallets/wallet.controller";
 import {
+  refundListSchema,
+  refundParamSchema,
+  rejectRefundSchema,
   rejectWithdrawalSchema,
   withdrawalListSchema,
   withdrawalParamSchema
 } from "../wallets/wallet.schemas";
+import * as paymentController from "../payments/payment.controller";
+import {
+  reconciliationListSchema,
+  reconciliationRunListSchema,
+  resolveReconciliationSchema
+} from "../payments/payment.schemas";
 
 export const adminRouter = Router();
 
@@ -93,6 +103,36 @@ adminRouter.get(
   controller.listPayments
 );
 adminRouter.get("/reports/revenue", authorize(ROLES.ADMIN, ROLES.ACCOUNTANT), controller.revenueReport);
+adminRouter.get(
+  "/reports/finance.csv",
+  authorize(ROLES.ADMIN, ROLES.ACCOUNTANT),
+  validate({ query: financeReportSchema }),
+  controller.financeCsvReportDownload
+);
+
+adminRouter.post(
+  "/reconciliation/run",
+  authorize(ROLES.ADMIN, ROLES.ACCOUNTANT),
+  paymentController.runReconciliation
+);
+adminRouter.get(
+  "/reconciliation/runs",
+  authorize(ROLES.ADMIN, ROLES.ACCOUNTANT),
+  validate({ query: reconciliationRunListSchema }),
+  paymentController.listReconciliationRuns
+);
+adminRouter.get(
+  "/reconciliation/items",
+  authorize(ROLES.ADMIN, ROLES.ACCOUNTANT),
+  validate({ query: reconciliationListSchema }),
+  paymentController.listReconciliationItems
+);
+adminRouter.post(
+  "/reconciliation/items/:id/resolve",
+  authorize(ROLES.ADMIN, ROLES.ACCOUNTANT),
+  validate({ params: idParamSchema, body: resolveReconciliationSchema }),
+  paymentController.resolveReconciliationItem
+);
 
 adminRouter.get(
   "/withdrawals",
@@ -111,6 +151,25 @@ adminRouter.post(
   authorize(ROLES.ADMIN, ROLES.ACCOUNTANT),
   validate({ params: withdrawalParamSchema, body: rejectWithdrawalSchema }),
   walletController.rejectWithdrawal
+);
+
+adminRouter.get(
+  "/refunds",
+  authorize(ROLES.ADMIN, ROLES.ACCOUNTANT),
+  validate({ query: refundListSchema }),
+  walletController.listRefunds
+);
+adminRouter.post(
+  "/refunds/:id/approve",
+  authorize(ROLES.ADMIN, ROLES.ACCOUNTANT),
+  validate({ params: refundParamSchema }),
+  walletController.approveRefund
+);
+adminRouter.post(
+  "/refunds/:id/reject",
+  authorize(ROLES.ADMIN, ROLES.ACCOUNTANT),
+  validate({ params: refundParamSchema, body: rejectRefundSchema }),
+  walletController.rejectRefund
 );
 
 adminRouter.get("/promotions", authorize(ROLES.ADMIN), promotionController.listPromotions);

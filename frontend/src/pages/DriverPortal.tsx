@@ -174,7 +174,15 @@ export function DriverPortal() {
           </div>
           <div>
             <span>Đang chờ rút</span>
-            <strong>{money(earnings.data?.pendingBalance)}</strong>
+            <strong>{money(earnings.data?.heldBalance)}</strong>
+          </div>
+          <div>
+            <span>Chờ quyết toán</span>
+            <strong>{money(earnings.data?.pendingSettlement)}</strong>
+          </div>
+          <div>
+            <span>Phải thu nền tảng</span>
+            <strong>{money(earnings.data?.platformReceivable)}</strong>
           </div>
           <div>
             <span>Hoàn thành</span>

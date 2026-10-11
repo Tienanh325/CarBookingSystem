@@ -49,6 +49,7 @@ jobs:
       - name: Backend quality
         working-directory: backend
         run: |
+          npm audit --audit-level=high
           npm run format:check
           npm run lint
           npm run typecheck
@@ -60,6 +61,7 @@ jobs:
       - name: Frontend quality
         working-directory: frontend
         run: |
+          npm audit --audit-level=high
           npm run format:check
           npm run lint
           npm run typecheck

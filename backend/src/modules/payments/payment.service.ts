@@ -1,17 +1,19 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
-import { Prisma } from "@prisma/client";
+import { Prisma, type ReconciliationClassification, type ReconciliationSource } from "@prisma/client";
 import { env } from "../../config/env";
 import { prisma } from "../../config/prisma";
 import { emitToUser, notifyRide } from "../../realtime/socket";
 import { ApiError } from "../../utils/api-error";
+import { writeFinancialAudit } from "../wallets/finance-audit";
 
-export type VietQrWebhookInput = {
+export type ProviderTransactionInput = {
   transactionId: string;
   reference: string;
   amount: number;
   paidAt: string;
-  signature: string;
 };
+
+export type VietQrWebhookInput = ProviderTransactionInput & { signature: string };
 
 export function createPaymentReference(prefix: "RIDE" | "TOPUP") {
   return `${prefix}${randomUUID().replaceAll("-", "").slice(0, 20).toUpperCase()}`;
@@ -49,10 +51,29 @@ function verifySignature(input: VietQrWebhookInput) {
   }
 }
 
+export function classifyProviderTransaction(input: {
+  amount: number;
+  paidAt: Date;
+  expectedAmount?: number;
+  expiresAt?: Date | null;
+  referenceFound: boolean;
+  alreadySettled?: boolean;
+}): ReconciliationClassification {
+  if (!input.referenceFound) return "REFERENCE_NOT_FOUND";
+  if (input.alreadySettled) return "DUPLICATE";
+  if (input.expiresAt && input.paidAt > input.expiresAt) return "EXPIRED";
+  if (input.amount < input.expectedAmount!) return "UNDERPAID";
+  if (input.amount > input.expectedAmount!) return "OVERPAID";
+  return "EXACT";
+}
+
 export async function getRidePayment(userId: string, rideId: string) {
   const payment = await prisma.payment.findFirst({
     where: { rideId, ride: { customerId: userId } },
-    include: { ride: { select: { id: true, status: true, paymentMethod: true } } }
+    include: {
+      ride: { select: { id: true, status: true, paymentMethod: true } },
+      refundRequests: { orderBy: { createdAt: "desc" } }
+    }
   });
   if (!payment) throw new ApiError(404, "PAYMENT_NOT_FOUND", "Khong tim thay giao dich");
   return {
@@ -64,107 +85,190 @@ export async function getRidePayment(userId: string, rideId: string) {
   };
 }
 
-export async function processVietQrWebhook(input: VietQrWebhookInput) {
-  verifySignature(input);
+async function recordDuplicate(transactionId: string, payload: ProviderTransactionInput) {
+  return prisma.$transaction(async (tx) => {
+    const event = await tx.paymentWebhookEvent.update({
+      where: { providerTransactionId: transactionId },
+      data: {
+        duplicateCount: { increment: 1 },
+        classification: "DUPLICATE",
+        reconciliationStatus: "REVIEW_REQUIRED",
+        lastReceivedAt: new Date(),
+        payload: payload as unknown as Prisma.InputJsonValue
+      }
+    });
+    await writeFinancialAudit(tx, {
+      action: "PROVIDER_TRANSACTION_DUPLICATE",
+      entityType: "PAYMENT_WEBHOOK_EVENT",
+      entityId: event.id,
+      metadata: { transactionId, reference: event.paymentReference, duplicateCount: event.duplicateCount }
+    });
+    return {
+      duplicate: true,
+      classification: "DUPLICATE" as const,
+      reconciliationStatus: "REVIEW_REQUIRED" as const,
+      reference: event.paymentReference
+    };
+  });
+}
+
+export async function ingestProviderTransaction(
+  input: ProviderTransactionInput,
+  source: ReconciliationSource = "WEBHOOK"
+) {
+  const paidAt = new Date(input.paidAt);
+  if (Number.isNaN(paidAt.getTime())) {
+    throw new ApiError(422, "PROVIDER_PAID_AT_INVALID", "Thoi gian giao dich khong hop le");
+  }
+  const existing = await prisma.paymentWebhookEvent.findUnique({
+    where: { providerTransactionId: input.transactionId }
+  });
+  if (existing) return recordDuplicate(input.transactionId, input);
+
   let rideId: string | undefined;
   let customerId: string | undefined;
-
-  let result: { duplicate: boolean; reference: string; kind?: "RIDE" | "TOP_UP"; rideId?: string };
   try {
-    result = await prisma.$transaction(
+    const result = await prisma.$transaction(
       async (tx) => {
-        const duplicate = await tx.paymentWebhookEvent.findUnique({
-          where: { providerTransactionId: input.transactionId }
-        });
-        if (duplicate) return { duplicate: true, reference: duplicate.paymentReference };
-
         const payment = await tx.payment.findUnique({ where: { paymentReference: input.reference } });
         const topUp = payment
           ? null
           : await tx.walletTopUp.findUnique({ where: { paymentReference: input.reference } });
-        if (!payment && !topUp)
-          throw new ApiError(404, "IPN_REFERENCE_NOT_FOUND", "Khong tim thay ma thanh toan");
-
-        const expectedAmount = Number(payment?.amount ?? topUp!.amount);
-        if (expectedAmount !== input.amount) {
-          throw new ApiError(422, "IPN_AMOUNT_MISMATCH", "So tien thanh toan khong khop", {
-            expectedAmount,
-            receivedAmount: input.amount
-          });
-        }
-
-        await tx.paymentWebhookEvent.create({
+        const target = payment ?? topUp;
+        const expectedAmount = target ? Number(target.amount) : undefined;
+        const alreadySettled = Boolean(
+          target && target.providerTransactionId && target.providerTransactionId !== input.transactionId
+        );
+        let classification = classifyProviderTransaction({
+          amount: input.amount,
+          paidAt,
+          expectedAmount,
+          expiresAt: target?.expiresAt,
+          referenceFound: Boolean(target),
+          alreadySettled
+        });
+        const event = await tx.paymentWebhookEvent.create({
           data: {
             provider: "VIETQR",
             providerTransactionId: input.transactionId,
             paymentReference: input.reference,
             amount: input.amount,
+            expectedAmount,
+            classification,
+            reconciliationStatus: classification === "EXACT" ? "MATCHED" : "REVIEW_REQUIRED",
+            source,
+            targetType: payment ? "PAYMENT" : topUp ? "WALLET_TOP_UP" : null,
+            targetId: target?.id,
+            paidAt,
+            expiresAt: target?.expiresAt,
+            reconciledAt: classification === "EXACT" ? new Date() : null,
             payload: input as unknown as Prisma.InputJsonValue
           }
         });
 
-        if (payment) {
+        if (classification === "EXACT" && payment) {
           rideId = payment.rideId;
-          if (payment.status === "PAID") return { duplicate: true, reference: input.reference };
-          if (payment.status !== "PENDING")
-            throw new ApiError(409, "PAYMENT_NOT_PENDING", "Giao dich khong con cho thanh toan");
           const claimed = await tx.payment.updateMany({
-            where: { id: payment.id, status: "PENDING" },
+            where: { id: payment.id, status: "PENDING", providerTransactionId: null },
+            data: {
+              status: "PAID",
+              capturedAmount: input.amount,
+              providerTransactionId: input.transactionId,
+              paidAt
+            }
+          });
+          if (!claimed.count) {
+            classification = "DUPLICATE";
+            await tx.paymentWebhookEvent.update({
+              where: { id: event.id },
+              data: { classification, reconciliationStatus: "REVIEW_REQUIRED", reconciledAt: null }
+            });
+          }
+        } else if (classification === "EXACT" && topUp) {
+          const claimed = await tx.walletTopUp.updateMany({
+            where: { id: topUp.id, status: "PENDING", providerTransactionId: null },
             data: {
               status: "PAID",
               providerTransactionId: input.transactionId,
-              paidAt: new Date(input.paidAt)
+              paidAt
             }
           });
-          if (!claimed.count) return { duplicate: true, reference: input.reference };
-          return {
-            duplicate: false,
-            kind: "RIDE" as const,
-            reference: input.reference,
-            rideId: payment.rideId
-          };
+          if (!claimed.count) {
+            classification = "DUPLICATE";
+            await tx.paymentWebhookEvent.update({
+              where: { id: event.id },
+              data: { classification, reconciliationStatus: "REVIEW_REQUIRED", reconciledAt: null }
+            });
+          } else {
+            const wallet = await tx.customerWallet.upsert({
+              where: { userId: topUp.customerId },
+              create: { userId: topUp.customerId },
+              update: { updatedAt: new Date() }
+            });
+            const receivablePaid = Math.min(Number(wallet.platformReceivable), input.amount);
+            const availableCredit = input.amount - receivablePaid;
+            await tx.customerWallet.update({
+              where: { id: wallet.id },
+              data: {
+                availableBalance: { increment: availableCredit },
+                platformReceivable: { decrement: receivablePaid }
+              }
+            });
+            customerId = topUp.customerId;
+            await tx.customerWalletTransaction.create({
+              data: {
+                walletId: wallet.id,
+                topUpId: topUp.id,
+                amount: input.amount,
+                availableDelta: availableCredit,
+                platformReceivableDelta: -receivablePaid,
+                type: "TOP_UP",
+                description: `VietQR top-up ${input.reference}`
+              }
+            });
+          }
         }
 
-        if (topUp!.status === "PAID") return { duplicate: true, reference: input.reference };
-        if (topUp!.status !== "PENDING")
-          throw new ApiError(409, "TOP_UP_NOT_PENDING", "Lenh nap tien khong con hieu luc");
-        const claimed = await tx.walletTopUp.updateMany({
-          where: { id: topUp!.id, status: "PENDING" },
-          data: { status: "PAID", providerTransactionId: input.transactionId, paidAt: new Date(input.paidAt) }
-        });
-        if (!claimed.count) return { duplicate: true, reference: input.reference };
-        const wallet = await tx.customerWallet.upsert({
-          where: { userId: topUp!.customerId },
-          create: { userId: topUp!.customerId, balance: input.amount },
-          update: { balance: { increment: input.amount } }
-        });
-        customerId = topUp!.customerId;
-        await tx.customerWalletTransaction.create({
-          data: {
-            walletId: wallet.id,
-            topUpId: topUp!.id,
-            amount: input.amount,
-            type: "TOP_UP",
-            description: `VietQR top-up ${input.reference}`
+        await writeFinancialAudit(tx, {
+          action:
+            classification === "EXACT" ? "PROVIDER_TRANSACTION_MATCHED" : "PROVIDER_TRANSACTION_EXCEPTION",
+          entityType: "PAYMENT_WEBHOOK_EVENT",
+          entityId: event.id,
+          metadata: {
+            transactionId: input.transactionId,
+            reference: input.reference,
+            receivedAmount: input.amount,
+            expectedAmount,
+            classification,
+            source
           }
         });
-        return { duplicate: false, kind: "TOP_UP" as const, reference: input.reference };
+        return {
+          duplicate: classification === "DUPLICATE",
+          classification,
+          reconciliationStatus:
+            classification === "EXACT" ? ("MATCHED" as const) : ("REVIEW_REQUIRED" as const),
+          reference: input.reference,
+          kind: payment ? ("RIDE" as const) : topUp ? ("TOP_UP" as const) : undefined,
+          rideId: payment?.rideId,
+          eventId: event.id
+        };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }
     );
+    if (rideId) await notifyRide(rideId, "payment.updated");
+    if (customerId) emitToUser(customerId, "wallet.updated", { reference: input.reference });
+    return result;
   } catch (error) {
-    // Two identical callbacks can pass the initial lookup concurrently. The unique
-    // provider transaction ID turns the loser into a successful idempotent replay.
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      const existing = await prisma.paymentWebhookEvent.findUnique({
-        where: { providerTransactionId: input.transactionId }
-      });
-      if (existing) return { duplicate: true, reference: existing.paymentReference };
+      return recordDuplicate(input.transactionId, input);
     }
     throw error;
   }
+}
 
-  if (rideId) await notifyRide(rideId, "payment.updated");
-  if (customerId) emitToUser(customerId, "wallet.updated", { reference: input.reference });
-  return result;
+export async function processVietQrWebhook(input: VietQrWebhookInput) {
+  verifySignature(input);
+  const { signature: _signature, ...transaction } = input;
+  return ingestProviderTransaction(transaction, "WEBHOOK");
 }

@@ -305,14 +305,16 @@ export async function completeRide(userId: string, id: string) {
       rideId: id,
       customerId: ride.customerId,
       method: ride.paymentMethod,
-      finalAmount: fare.total
+      finalAmount: fare.total,
+      actorId: userId
     });
     await settleDriverRide(tx, {
       rideId: id,
       driverId: driver.id,
       grossFare: fare.total,
       paymentMethod: ride.paymentMethod,
-      commissionRate: Number(ride.commissionRate)
+      commissionRate: Number(ride.commissionRate),
+      actorId: userId
     });
     await tx.driverProfile.update({
       where: { id: driver.id },

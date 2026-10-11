@@ -29,6 +29,14 @@ async function request(path, { token, method = "GET", body } = {}) {
   return payload.data;
 }
 
+function signedIpn(transactionId, reference, amount, paidAt = new Date().toISOString()) {
+  const payload = `${transactionId}|${reference}|${amount}|${paidAt}`;
+  const signature = createHmac("sha256", process.env.VIETQR_WEBHOOK_SECRET || "dev-vietqr-secret-change-me")
+    .update(payload)
+    .digest("hex");
+  return { transactionId, reference, amount, paidAt, signature };
+}
+
 function waitForEvent(socket, event, predicate = () => true, timeoutMs = 6000) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -108,14 +116,14 @@ async function main() {
   const driverPhone = `08${suffix}`;
   const customerPhone = `09${suffix}`;
 
-  console.log("1/12 Checking API and MySQL readiness");
+  console.log("1/14 Checking API and MySQL readiness");
   const ready = await request("/ready");
   assert.equal(ready.database, "ready");
   const vehicleTypes = await request("/api/vehicle-types");
   const vehicleType = vehicleTypes.find((item) => item.code === "CAR4") || vehicleTypes[0];
   assert.ok(vehicleType?.id);
 
-  console.log("2/12 Registering real customer and driver accounts");
+  console.log("2/14 Registering real customer and driver accounts");
   const adminAuth = await request("/api/auth/login", {
     method: "POST",
     body: {
@@ -134,7 +142,7 @@ async function main() {
   });
   createdUserIds.push(customerAuth.user.id);
 
-  console.log("3/12 Registering and approving the driver profile");
+  console.log("3/14 Registering and approving the driver profile");
   const driver = await request("/api/drivers/register", {
     token: driverAuth.tokens.accessToken,
     method: "POST",
@@ -171,12 +179,12 @@ async function main() {
     body: {}
   });
 
-  console.log("4/12 Connecting customer and driver through Socket.IO");
+  console.log("4/14 Connecting customer and driver through Socket.IO");
   const customerSocket = await connectSocket(customerAuth.tokens.accessToken);
   const driverSocket = await connectSocket(driverAuth.tokens.accessToken);
   const incomingRide = waitForEvent(driverSocket, "ride.request.created");
 
-  console.log("5/12 Estimating and creating a ride in MySQL");
+  console.log("5/14 Estimating and creating a ride in MySQL");
   const trip = {
     pickup: { address: "Ben Thanh Market, District 1", lat: 10.7723, lng: 106.6981 },
     stops: [{ address: "Saigon Central Post Office, District 1", lat: 10.7798, lng: 106.6999, dwellMinutes: 5 }],
@@ -203,7 +211,7 @@ async function main() {
   assert.equal(incomingPayload.rideId, ride.id);
   await joinRide(customerSocket, ride.id);
 
-  console.log("6/12 Accepting the ride and streaming driver location");
+  console.log("6/14 Accepting the ride and streaming driver location");
   const acceptedEvent = waitForEvent(customerSocket, "ride.accepted", (payload) => payload.rideId === ride.id);
   const requests = await request("/api/drivers/me/ride-requests", { token: driverAuth.tokens.accessToken });
   assert.ok(requests.some((item) => item.id === ride.id));
@@ -221,7 +229,7 @@ async function main() {
   });
   await locationEvent;
 
-  console.log("7/12 Completing the ride state machine and cash payment");
+  console.log("7/14 Completing the ride state machine and cash payment");
   await request(`/api/drivers/rides/${ride.id}/heading`, { token: driverAuth.tokens.accessToken, method: "POST", body: {} });
   await request(`/api/drivers/rides/${ride.id}/arrived`, { token: driverAuth.tokens.accessToken, method: "POST", body: {} });
   const rideForPin = await request("/api/rides/current?as=customer", { token: customerAuth.tokens.accessToken });
@@ -257,7 +265,7 @@ async function main() {
     body: { reason: "Live flow scheduled booking cleanup" }
   });
 
-  console.log("8/12 Verifying cancellation fees and driver rematching");
+  console.log("8/14 Verifying cancellation fees and driver rematching");
   await request("/api/drivers/me/location", {
     token: driverAuth.tokens.accessToken,
     method: "POST",
@@ -313,7 +321,7 @@ async function main() {
     body: { reason: "Clean up rematching verification" }
   });
 
-  console.log("9/12 Verifying role-scoped screens and admin reporting");
+  console.log("9/14 Verifying role-scoped screens and admin reporting");
   const driverCustomerHistory = await request("/api/rides?as=customer", { token: driverAuth.tokens.accessToken });
   const driverRideHistory = await request("/api/rides?as=driver", { token: driverAuth.tokens.accessToken });
   assert.ok(Array.isArray(driverCustomerHistory));
@@ -324,7 +332,7 @@ async function main() {
   assert.ok(dashboard.completedRides >= 1);
   assert.ok(dashboard.revenue >= Number(completed.finalFare));
 
-  console.log("10/12 Verifying VietQR IPN, idempotency and wallet refunds");
+  console.log("10/14 Verifying VietQR classification and wallet hold/release");
   const topUp = await request("/api/customers/me/wallet/top-ups", {
     token: customerAuth.tokens.accessToken,
     method: "POST",
@@ -334,9 +342,7 @@ async function main() {
   const paidAt = new Date().toISOString();
   const transactionId = `E2E-TOPUP-${suffix}`;
   webhookTransactionIds.push(transactionId);
-  const signaturePayload = `${transactionId}|${topUp.paymentReference}|1000000|${paidAt}`;
-  const signature = createHmac("sha256", process.env.VIETQR_WEBHOOK_SECRET || "dev-vietqr-secret-change-me").update(signaturePayload).digest("hex");
-  const ipnBody = { transactionId, reference: topUp.paymentReference, amount: 1_000_000, paidAt, signature };
+  const ipnBody = signedIpn(transactionId, topUp.paymentReference, 1_000_000, paidAt);
   const ipnResults = await Promise.all([
     request("/api/payments/vietqr/ipn", { method: "POST", body: ipnBody }),
     request("/api/payments/vietqr/ipn", { method: "POST", body: ipnBody })
@@ -351,19 +357,128 @@ async function main() {
     body: { ...trip, stops: [], scheduledAt: new Date(Date.now() + 3 * 60 * 60_000).toISOString(), paymentMethod: "WALLET" }
   });
   createdRideIds.push(walletRide.id);
-  assert.equal(walletRide.payment.status, "PAID");
+  assert.equal(walletRide.payment.status, "AUTHORIZED");
   const walletAfterCharge = await request("/api/customers/me/wallet", { token: customerAuth.tokens.accessToken });
-  assert.equal(walletAfterCharge.balance, 1_000_000 - Number(walletRide.payment.amount));
+  assert.equal(walletAfterCharge.availableBalance, 1_000_000 - Number(walletRide.payment.amount));
+  assert.equal(walletAfterCharge.heldBalance, Number(walletRide.payment.amount));
   await request(`/api/rides/${walletRide.id}/cancel`, {
     token: customerAuth.tokens.accessToken,
     method: "POST",
     body: { reason: "Verify automatic wallet refund" }
   });
   const walletAfterRefund = await request("/api/customers/me/wallet", { token: customerAuth.tokens.accessToken });
-  assert.equal(walletAfterRefund.balance, 1_000_000);
+  assert.equal(walletAfterRefund.availableBalance, 1_000_000);
+  assert.equal(walletAfterRefund.heldBalance, 0);
 
-  console.log("11/12 Verifying withdrawal reserve and admin approval");
-  await prisma.driverWallet.update({ where: { driverId: driver.id }, data: { balance: 100_000, pendingBalance: 0 } });
+  const underpaidTopUp = await request("/api/customers/me/wallet/top-ups", {
+    token: customerAuth.tokens.accessToken,
+    method: "POST",
+    body: { amount: 100_000 }
+  });
+  const underpaidTransactionId = `E2E-UNDER-${suffix}`;
+  webhookTransactionIds.push(underpaidTransactionId);
+  const underpaid = await request("/api/payments/vietqr/ipn", {
+    method: "POST",
+    body: signedIpn(underpaidTransactionId, underpaidTopUp.paymentReference, 90_000)
+  });
+  assert.equal(underpaid.classification, "UNDERPAID");
+
+  const unknownTransactionId = `E2E-UNKNOWN-${suffix}`;
+  webhookTransactionIds.push(unknownTransactionId);
+  const unknown = await request("/api/payments/vietqr/ipn", {
+    method: "POST",
+    body: signedIpn(unknownTransactionId, `UNKNOWN${suffix}`, 75_000)
+  });
+  assert.equal(unknown.classification, "REFERENCE_NOT_FOUND");
+
+  const expiredTopUp = await request("/api/customers/me/wallet/top-ups", {
+    token: customerAuth.tokens.accessToken,
+    method: "POST",
+    body: { amount: 120_000 }
+  });
+  await prisma.walletTopUp.update({
+    where: { id: expiredTopUp.id },
+    data: { expiresAt: new Date(Date.now() - 60_000) }
+  });
+  const expiredTransactionId = `E2E-EXPIRED-${suffix}`;
+  webhookTransactionIds.push(expiredTransactionId);
+  const expired = await request("/api/payments/vietqr/ipn", {
+    method: "POST",
+    body: signedIpn(expiredTransactionId, expiredTopUp.paymentReference, 120_000)
+  });
+  assert.equal(expired.classification, "EXPIRED");
+
+  console.log("11/14 Verifying admin-approved refunds and reconciliation operations");
+  const vietQrRide = await request("/api/rides", {
+    token: customerAuth.tokens.accessToken,
+    method: "POST",
+    body: {
+      ...trip,
+      stops: [],
+      scheduledAt: new Date(Date.now() + 4 * 60 * 60_000).toISOString(),
+      paymentMethod: "VIETQR"
+    }
+  });
+  createdRideIds.push(vietQrRide.id);
+  const ridePaymentTransactionId = `E2E-RIDE-${suffix}`;
+  webhookTransactionIds.push(ridePaymentTransactionId);
+  const paidRide = await request("/api/payments/vietqr/ipn", {
+    method: "POST",
+    body: signedIpn(
+      ridePaymentTransactionId,
+      vietQrRide.payment.paymentReference,
+      Number(vietQrRide.payment.amount)
+    )
+  });
+  assert.equal(paidRide.classification, "EXACT");
+  const cancelledVietQrRide = await request(`/api/rides/${vietQrRide.id}/cancel`, {
+    token: customerAuth.tokens.accessToken,
+    method: "POST",
+    body: { reason: "Verify admin-approved refund workflow" }
+  });
+  assert.equal(cancelledVietQrRide.payment.status, "REFUND_PENDING");
+  let refundWallet = await request("/api/customers/me/wallet", { token: customerAuth.tokens.accessToken });
+  assert.equal(refundWallet.pendingSettlement, Number(vietQrRide.payment.amount));
+  const refunds = await request("/api/admin/refunds?status=PENDING&page=1&limit=100", {
+    token: adminAuth.tokens.accessToken
+  });
+  const refund = refunds.items.find((item) => item.rideId === vietQrRide.id);
+  assert.ok(refund?.id);
+  await request(`/api/admin/refunds/${refund.id}/approve`, {
+    token: adminAuth.tokens.accessToken,
+    method: "POST",
+    body: {}
+  });
+  refundWallet = await request("/api/customers/me/wallet", { token: customerAuth.tokens.accessToken });
+  assert.equal(refundWallet.pendingSettlement, 0);
+  assert.equal(refundWallet.availableBalance, 1_000_000 + Number(vietQrRide.payment.amount));
+
+  const exceptions = await request("/api/admin/reconciliation/items?status=REVIEW_REQUIRED&page=1&limit=100", {
+    token: adminAuth.tokens.accessToken
+  });
+  assert.ok(exceptions.items.some((item) => item.classification === "UNDERPAID"));
+  assert.ok(exceptions.items.some((item) => item.classification === "REFERENCE_NOT_FOUND"));
+  assert.ok(exceptions.items.some((item) => item.classification === "DUPLICATE"));
+  assert.ok(exceptions.items.some((item) => item.classification === "EXPIRED"));
+  const underpaidItem = exceptions.items.find((item) => item.providerTransactionId === underpaidTransactionId);
+  assert.ok(underpaidItem?.id);
+  await request(`/api/admin/reconciliation/items/${underpaidItem.id}/resolve`, {
+    token: adminAuth.tokens.accessToken,
+    method: "POST",
+    body: { action: "IGNORE", note: "E2E verifies reconciliation review" }
+  });
+  const reconciliationRun = await request("/api/admin/reconciliation/run", {
+    token: adminAuth.tokens.accessToken,
+    method: "POST",
+    body: {}
+  });
+  assert.equal(reconciliationRun.status, "COMPLETED");
+
+  console.log("12/14 Verifying withdrawal hold and admin approval");
+  await prisma.driverWallet.update({
+    where: { driverId: driver.id },
+    data: { availableBalance: 100_000, heldBalance: 0 }
+  });
   const withdrawal = await request("/api/drivers/me/withdrawals", {
     token: driverAuth.tokens.accessToken,
     method: "POST",
@@ -371,18 +486,51 @@ async function main() {
   });
   assert.equal(withdrawal.status, "PENDING");
   let driverWallet = await request("/api/drivers/me/wallet", { token: driverAuth.tokens.accessToken });
-  assert.equal(driverWallet.balance, 100_000);
-  assert.equal(driverWallet.pendingBalance, 50_000);
+  assert.equal(driverWallet.availableBalance, 50_000);
+  assert.equal(driverWallet.heldBalance, 50_000);
   await request(`/api/admin/withdrawals/${withdrawal.id}/approve`, {
     token: adminAuth.tokens.accessToken,
     method: "POST",
     body: {}
   });
   driverWallet = await request("/api/drivers/me/wallet", { token: driverAuth.tokens.accessToken });
-  assert.equal(driverWallet.balance, 50_000);
-  assert.equal(driverWallet.pendingBalance, 0);
+  assert.equal(driverWallet.availableBalance, 50_000);
+  assert.equal(driverWallet.heldBalance, 0);
 
-  console.log("12/12 Revoking the customer session and Socket.IO connection");
+  console.log("13/14 Verifying CSV reports and financial audit coverage");
+  const reportDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date());
+  const reportResponse = await fetch(
+    `${baseUrl}/api/admin/reports/finance.csv?period=day&date=${reportDate}`,
+    { headers: { Authorization: `Bearer ${adminAuth.tokens.accessToken}` } }
+  );
+  assert.equal(reportResponse.status, 200);
+  const reportCsv = await reportResponse.text();
+  for (const metric of ["TOTAL_REVENUE", "PLATFORM_COMMISSION", "CASH_COLLECTION", "WALLET_TOP_UP", "REFUND", "WITHDRAWAL"]) {
+    assert.ok(reportCsv.includes(metric));
+  }
+  const auditCount = await prisma.auditLog.count({
+    where: {
+      actorId: { in: createdUserIds },
+      action: {
+        in: [
+          "WALLET_TOP_UP_CREATED",
+          "WALLET_PAYMENT_AUTHORIZED",
+          "REFUND_REQUESTED",
+          "REFUND_APPROVED",
+          "WITHDRAWAL_REQUESTED",
+          "WITHDRAWAL_APPROVED"
+        ]
+      }
+    }
+  });
+  assert.ok(auditCount >= 6);
+
+  console.log("14/14 Revoking the customer session and Socket.IO connection");
   const disconnected = waitForEvent(customerSocket, "disconnect", () => true);
   await request("/api/auth/logout", {
     token: customerAuth.tokens.accessToken,
@@ -402,7 +550,7 @@ async function main() {
   });
 
   console.log(
-    "LIVE FLOW VERIFIED: actual fares, invoices, cancellation fees, rematching, VietQR, wallets, withdrawals, RBAC and Socket.IO all passed."
+    "LIVE FLOW VERIFIED: fares, invoices, reconciliation, wallet holds, approved refunds, ledger buckets, CSV reports, withdrawals, audit logs, RBAC and Socket.IO all passed."
   );
 }
 

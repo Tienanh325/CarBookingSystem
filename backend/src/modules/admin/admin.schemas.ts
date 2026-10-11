@@ -22,3 +22,8 @@ export const rejectDriverSchema = z.object({
 export const adminCancelRideSchema = z.object({
   reason: z.string().min(3).max(255)
 });
+
+export const financeReportSchema = z.object({
+  period: z.enum(["day", "month"]),
+  date: z.string().regex(/^\d{4}-\d{2}(?:-\d{2})?$/)
+});

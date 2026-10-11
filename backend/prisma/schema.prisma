@@ -64,8 +64,12 @@ enum PaymentMethod {
 
 enum PaymentStatus {
   PENDING
+  AUTHORIZED
+  PARTIALLY_PAID
   PAID
   FAILED
+  VOIDED
+  REFUND_PENDING
   REFUNDED
 }
 
@@ -78,6 +82,11 @@ enum WalletTransactionType {
   RIDE_EARNING
   COMMISSION
   CASH_COLLECTION
+  HOLD
+  CAPTURE
+  RELEASE
+  SETTLEMENT
+  RECEIVABLE
   WITHDRAWAL
   REFUND
   ADJUSTMENT
@@ -85,9 +94,47 @@ enum WalletTransactionType {
 
 enum CustomerWalletTransactionType {
   TOP_UP
+  HOLD
+  CAPTURE
+  RELEASE
   RIDE_PAYMENT
+  SETTLEMENT
+  RECEIVABLE
   REFUND
   ADJUSTMENT
+}
+
+enum RefundStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ReconciliationClassification {
+  EXACT
+  UNDERPAID
+  OVERPAID
+  REFERENCE_NOT_FOUND
+  DUPLICATE
+  EXPIRED
+}
+
+enum ReconciliationStatus {
+  MATCHED
+  REVIEW_REQUIRED
+  RESOLVED
+  IGNORED
+}
+
+enum ReconciliationSource {
+  WEBHOOK
+  PROVIDER_POLL
+}
+
+enum ReconciliationRunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
 }
 
 enum WithdrawalStatus {
@@ -551,13 +598,16 @@ model Payment {
   paymentReference      String?       @unique @map("payment_reference") @db.VarChar(50)
   expiresAt             DateTime?     @map("expires_at")
   status                PaymentStatus @default(PENDING)
+  authorizedAmount      Decimal       @default(0) @map("authorized_amount") @db.Decimal(12, 2)
+  capturedAmount        Decimal       @default(0) @map("captured_amount") @db.Decimal(12, 2)
   refundedAmount        Decimal       @default(0) @map("refunded_amount") @db.Decimal(12, 2)
   paidAt                DateTime?     @map("paid_at")
   createdAt             DateTime      @default(now()) @map("created_at")
   updatedAt             DateTime      @updatedAt @map("updated_at")
 
-  ride     Ride @relation(fields: [rideId], references: [id])
-  customer User @relation(fields: [customerId], references: [id])
+  ride           Ride            @relation(fields: [rideId], references: [id])
+  customer       User            @relation(fields: [customerId], references: [id])
+  refundRequests RefundRequest[]
 
   @@index([status, createdAt])
   @@map("payments")
@@ -586,12 +636,15 @@ model Invoice {
 }
 
 model CustomerWallet {
-  id        String   @id @default(uuid()) @db.Char(36)
-  userId    String   @unique @map("user_id") @db.Char(36)
-  balance   Decimal  @default(0) @db.Decimal(12, 2)
-  currency  String   @default("VND")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id                 String   @id @default(uuid()) @db.Char(36)
+  userId             String   @unique @map("user_id") @db.Char(36)
+  availableBalance   Decimal  @default(0) @map("available_balance") @db.Decimal(12, 2)
+  heldBalance        Decimal  @default(0) @map("held_balance") @db.Decimal(12, 2)
+  pendingSettlement  Decimal  @default(0) @map("pending_settlement") @db.Decimal(12, 2)
+  platformReceivable Decimal  @default(0) @map("platform_receivable") @db.Decimal(12, 2)
+  currency           String   @default("VND")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
 
   user         User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
   transactions CustomerWalletTransaction[]
@@ -600,15 +653,19 @@ model CustomerWallet {
 }
 
 model CustomerWalletTransaction {
-  id          String                        @id @default(uuid()) @db.Char(36)
-  walletId    String                        @map("wallet_id") @db.Char(36)
-  rideId      String?                       @map("ride_id") @db.Char(36)
-  topUpId     String?                       @map("top_up_id") @db.Char(36)
-  amount      Decimal                       @db.Decimal(12, 2)
-  type        CustomerWalletTransactionType
-  status      WalletTransactionStatus       @default(COMPLETED)
-  description String?
-  createdAt   DateTime                      @default(now()) @map("created_at")
+  id                      String                        @id @default(uuid()) @db.Char(36)
+  walletId                String                        @map("wallet_id") @db.Char(36)
+  rideId                  String?                       @map("ride_id") @db.Char(36)
+  topUpId                 String?                       @map("top_up_id") @db.Char(36)
+  amount                  Decimal                       @db.Decimal(12, 2)
+  availableDelta          Decimal                       @default(0) @map("available_delta") @db.Decimal(12, 2)
+  heldDelta               Decimal                       @default(0) @map("held_delta") @db.Decimal(12, 2)
+  pendingSettlementDelta  Decimal                       @default(0) @map("pending_settlement_delta") @db.Decimal(12, 2)
+  platformReceivableDelta Decimal                       @default(0) @map("platform_receivable_delta") @db.Decimal(12, 2)
+  type                    CustomerWalletTransactionType
+  status                  WalletTransactionStatus       @default(COMPLETED)
+  description             String?
+  createdAt               DateTime                      @default(now()) @map("created_at")
 
   wallet CustomerWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
   topUp  WalletTopUp?   @relation(fields: [topUpId], references: [id])
@@ -639,25 +696,41 @@ model WalletTopUp {
 }
 
 model PaymentWebhookEvent {
-  id                    String   @id @default(uuid()) @db.Char(36)
+  id                    String                       @id @default(uuid()) @db.Char(36)
   provider              String
-  providerTransactionId String   @unique @map("provider_transaction_id")
-  paymentReference      String   @map("payment_reference") @db.VarChar(50)
-  amount                Decimal  @db.Decimal(12, 2)
+  providerTransactionId String                       @unique @map("provider_transaction_id")
+  paymentReference      String                       @map("payment_reference") @db.VarChar(50)
+  amount                Decimal                      @db.Decimal(12, 2)
+  expectedAmount        Decimal?                     @map("expected_amount") @db.Decimal(12, 2)
+  classification        ReconciliationClassification @default(EXACT)
+  reconciliationStatus  ReconciliationStatus         @default(MATCHED) @map("reconciliation_status")
+  source                ReconciliationSource         @default(WEBHOOK)
+  targetType            String?                      @map("target_type") @db.VarChar(30)
+  targetId              String?                      @map("target_id") @db.Char(36)
+  paidAt                DateTime?                    @map("paid_at")
+  expiresAt             DateTime?                    @map("expires_at")
+  duplicateCount        Int                          @default(0) @map("duplicate_count")
+  lastReceivedAt        DateTime                     @default(now()) @map("last_received_at")
+  reconciledAt          DateTime?                    @map("reconciled_at")
+  resolutionNote        String?                      @map("resolution_note")
   payload               Json?
-  createdAt             DateTime @default(now()) @map("created_at")
+  createdAt             DateTime                     @default(now()) @map("created_at")
 
+  @@index([classification, reconciliationStatus, createdAt])
+  @@index([paymentReference])
   @@map("payment_webhook_events")
 }
 
 model DriverWallet {
-  id             String   @id @default(uuid()) @db.Char(36)
-  driverId       String   @unique @map("driver_id") @db.Char(36)
-  balance        Decimal  @default(0) @db.Decimal(12, 2)
-  pendingBalance Decimal  @default(0) @map("pending_balance") @db.Decimal(12, 2)
-  currency       String   @default("VND")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  id                 String   @id @default(uuid()) @db.Char(36)
+  driverId           String   @unique @map("driver_id") @db.Char(36)
+  availableBalance   Decimal  @default(0) @map("available_balance") @db.Decimal(12, 2)
+  heldBalance        Decimal  @default(0) @map("held_balance") @db.Decimal(12, 2)
+  pendingSettlement  Decimal  @default(0) @map("pending_settlement") @db.Decimal(12, 2)
+  platformReceivable Decimal  @default(0) @map("platform_receivable") @db.Decimal(12, 2)
+  currency           String   @default("VND")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
 
   driver       DriverProfile       @relation(fields: [driverId], references: [id], onDelete: Cascade)
   transactions WalletTransaction[]
@@ -666,20 +739,65 @@ model DriverWallet {
 }
 
 model WalletTransaction {
-  id          String                  @id @default(uuid()) @db.Char(36)
-  walletId    String                  @map("wallet_id") @db.Char(36)
-  rideId      String?                 @map("ride_id") @db.Char(36)
-  amount      Decimal                 @db.Decimal(12, 2)
-  type        WalletTransactionType
-  status      WalletTransactionStatus @default(COMPLETED)
-  description String?
-  createdAt   DateTime                @default(now()) @map("created_at")
+  id                      String                  @id @default(uuid()) @db.Char(36)
+  walletId                String                  @map("wallet_id") @db.Char(36)
+  rideId                  String?                 @map("ride_id") @db.Char(36)
+  amount                  Decimal                 @db.Decimal(12, 2)
+  availableDelta          Decimal                 @default(0) @map("available_delta") @db.Decimal(12, 2)
+  heldDelta               Decimal                 @default(0) @map("held_delta") @db.Decimal(12, 2)
+  pendingSettlementDelta  Decimal                 @default(0) @map("pending_settlement_delta") @db.Decimal(12, 2)
+  platformReceivableDelta Decimal                 @default(0) @map("platform_receivable_delta") @db.Decimal(12, 2)
+  type                    WalletTransactionType
+  status                  WalletTransactionStatus @default(COMPLETED)
+  description             String?
+  createdAt               DateTime                @default(now()) @map("created_at")
 
   wallet DriverWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
   ride   Ride?        @relation(fields: [rideId], references: [id])
 
   @@index([walletId, createdAt])
   @@map("wallet_transactions")
+}
+
+model RefundRequest {
+  id              String       @id @default(uuid()) @db.Char(36)
+  paymentId       String       @map("payment_id") @db.Char(36)
+  rideId          String       @map("ride_id") @db.Char(36)
+  customerId      String       @map("customer_id") @db.Char(36)
+  amount          Decimal      @db.Decimal(12, 2)
+  reason          String
+  status          RefundStatus @default(PENDING)
+  requestedById   String       @map("requested_by_id") @db.Char(36)
+  reviewedById    String?      @map("reviewed_by_id") @db.Char(36)
+  rejectionReason String?      @map("rejection_reason")
+  reviewedAt      DateTime?    @map("reviewed_at")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([customerId, createdAt])
+  @@index([paymentId, status])
+  @@map("refund_requests")
+}
+
+model ReconciliationRun {
+  id             String                  @id @default(uuid()) @db.Char(36)
+  provider       String
+  status         ReconciliationRunStatus @default(RUNNING)
+  windowFrom     DateTime                @map("window_from")
+  windowTo       DateTime                @map("window_to")
+  fetchedCount   Int                     @default(0) @map("fetched_count")
+  exactCount     Int                     @default(0) @map("exact_count")
+  exceptionCount Int                     @default(0) @map("exception_count")
+  duplicateCount Int                     @default(0) @map("duplicate_count")
+  errorMessage   String?                 @map("error_message")
+  startedAt      DateTime                @default(now()) @map("started_at")
+  finishedAt     DateTime?               @map("finished_at")
+
+  @@index([provider, startedAt])
+  @@map("reconciliation_runs")
 }
 
 model WithdrawalRequest {

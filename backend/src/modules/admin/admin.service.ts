@@ -25,6 +25,12 @@ function pagination(query: ListQuery) {
 }
 
 export async function dashboard() {
+  const recognizedStatuses = [
+    PaymentStatus.PAID,
+    PaymentStatus.PARTIALLY_PAID,
+    PaymentStatus.REFUND_PENDING,
+    PaymentStatus.REFUNDED
+  ];
   const [totalUsers, totalDrivers, onlineDrivers, activeRides, completedRides, cancelledRides, paidPayments] =
     await Promise.all([
       prisma.user.count(),
@@ -56,8 +62,8 @@ export async function dashboard() {
         }
       }),
       prisma.payment.aggregate({
-        where: { status: PaymentStatus.PAID },
-        _sum: { amount: true },
+        where: { status: { in: recognizedStatuses } },
+        _sum: { capturedAmount: true },
         _count: true
       })
     ]);
@@ -66,8 +72,8 @@ export async function dashboard() {
   since.setUTCHours(0, 0, 0, 0);
   since.setUTCDate(since.getUTCDate() - 6);
   const recent = await prisma.payment.findMany({
-    where: { status: "PAID", paidAt: { gte: since } },
-    select: { amount: true, paidAt: true }
+    where: { status: { in: recognizedStatuses }, paidAt: { gte: since } },
+    select: { capturedAmount: true, paidAt: true }
   });
   const dailyRevenue = Array.from({ length: 7 }, (_, i) => {
     const day = new Date(since.getTime() + i * 86400000).toISOString().slice(0, 10);
@@ -75,7 +81,7 @@ export async function dashboard() {
       day,
       revenue: recent
         .filter((p) => p.paidAt?.toISOString().startsWith(day))
-        .reduce((sum, p) => sum + Number(p.amount), 0)
+        .reduce((sum, p) => sum + Number(p.capturedAmount), 0)
     };
   });
   const statusCounts = await prisma.ride.groupBy({ by: ["status"], _count: true });
@@ -89,7 +95,7 @@ export async function dashboard() {
     completedRides,
     cancelledRides,
     paidTransactions: paidPayments._count,
-    revenue: Number(paidPayments._sum.amount ?? 0)
+    revenue: Number(paidPayments._sum.capturedAmount ?? 0)
   };
 }
 
@@ -356,7 +362,7 @@ export async function cancelRide(id: string, reason: string, actorId: string) {
       }
     });
 
-    await refundCustomerWalletRide(tx, id);
+    await refundCustomerWalletRide(tx, id, actorId);
 
     await tx.auditLog.create({
       data: {
@@ -397,21 +403,27 @@ export async function listPayments(query: ListQuery) {
 }
 
 export async function revenueReport() {
+  const recognizedStatuses = [
+    PaymentStatus.PAID,
+    PaymentStatus.PARTIALLY_PAID,
+    PaymentStatus.REFUND_PENDING,
+    PaymentStatus.REFUNDED
+  ];
   const [paid, pending, byMethod, commissions, driverEarnings] = await Promise.all([
     prisma.payment.aggregate({
-      where: { status: PaymentStatus.PAID },
-      _sum: { amount: true },
+      where: { status: { in: recognizedStatuses } },
+      _sum: { capturedAmount: true },
       _count: true
     }),
     prisma.payment.aggregate({
-      where: { status: PaymentStatus.PENDING },
+      where: { status: { in: [PaymentStatus.PENDING, PaymentStatus.AUTHORIZED] } },
       _sum: { amount: true },
       _count: true
     }),
     prisma.payment.groupBy({
       by: ["method"],
-      where: { status: PaymentStatus.PAID },
-      _sum: { amount: true },
+      where: { status: { in: recognizedStatuses } },
+      _sum: { capturedAmount: true },
       _count: true
     }),
     prisma.walletTransaction.aggregate({
@@ -428,7 +440,7 @@ export async function revenueReport() {
   return {
     paid: {
       count: paid._count,
-      amount: Number(paid._sum.amount ?? 0)
+      amount: Number(paid._sum.capturedAmount ?? 0)
     },
     pending: {
       count: pending._count,
@@ -442,7 +454,7 @@ export async function revenueReport() {
     byMethod: byMethod.map((item) => ({
       method: item.method,
       count: item._count,
-      amount: Number(item._sum.amount ?? 0)
+      amount: Number(item._sum.capturedAmount ?? 0)
     }))
   };
 }

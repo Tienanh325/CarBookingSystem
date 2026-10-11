@@ -35,7 +35,9 @@ De phu hop do an va de trien khai chac chan, co the dung:
 | customer_wallet_transactions | So cai vi khach hang |
 | wallet_top_ups | Lenh nap tien VietQR |
 | withdrawal_requests | Yeu cau rut tien tai xe |
-| payment_webhook_events | Chong trung va audit IPN |
+| refund_requests | Yeu cau hoan tien can admin phe duyet |
+| payment_webhook_events | Giao dich provider, chong trung va ket qua phan loai doi soat |
+| reconciliation_runs | Lich su job doi soat dinh ky/thu cong |
 | surcharge_rules | Cau hinh phu phi linh hoat |
 | pricing_contexts | Trang thai thoi tiet tinh gia |
 | ride_location_points | Mau GPS trong chuyen |
@@ -119,7 +121,7 @@ De phu hop do an va de trien khai chac chan, co the dung:
 | pricing_snapshot | JSON | Cong thuc gia tai luc dat xe |
 | fare_breakdown | JSON | Chi tiet gia cuoi cung |
 | promotion_id | UUID NULL | Ma khuyen mai |
-| payment_method | ENUM | CASH, CARD, WALLET |
+| payment_method | ENUM | CASH, CARD, WALLET, VIETQR |
 | status | ENUM | Trang thai chuyen |
 | requested_at | TIMESTAMP | Tao yeu cau |
 | accepted_at | TIMESTAMP NULL | Tai xe nhan |
@@ -139,9 +141,54 @@ De phu hop do an va de trien khai chac chan, co the dung:
 | method | ENUM | CASH, CARD, WALLET, VIETQR |
 | provider | VARCHAR NULL | Cong thanh toan |
 | provider_transaction_id | VARCHAR NULL | Ma giao dich ngoai |
-| status | ENUM | PENDING, PAID, FAILED, REFUNDED |
+| payment_reference | VARCHAR UNIQUE NULL | Reference VietQR |
+| expires_at | TIMESTAMP NULL | Han thanh toan online |
+| status | ENUM | PENDING, AUTHORIZED, PARTIALLY_PAID, PAID, FAILED, VOIDED, REFUND_PENDING, REFUNDED |
+| authorized_amount | DECIMAL | So tien vi dang giu |
+| captured_amount | DECIMAL | So tien da ghi nhan thanh toan |
+| refunded_amount | DECIMAL | Tong tien da hoan |
 | paid_at | TIMESTAMP NULL | Thoi diem thanh toan |
 | created_at | TIMESTAMP | Ngay tao |
+
+### 3.6 Wallet ledger
+
+Ca `customer_wallets` va `driver_wallets` deu co bon bucket:
+
+| Cot | Y nghia |
+| --- | --- |
+| available_balance | So du co the chi tieu/rut ngay |
+| held_balance | So du dang khoa cho cuoc xe hoac lenh rut |
+| pending_settlement | Khoan da phat sinh nhung dang cho ket chuyen |
+| platform_receivable | Khoan chu vi con no nen tang |
+
+Moi thay doi so du phai co mot dong ledger trong `customer_wallet_transactions` hoac
+`wallet_transactions`. Moi dong luu `amount`, `type`, `status` va bon cot delta tuong ung:
+`available_delta`, `held_delta`, `pending_settlement_delta`, `platform_receivable_delta`.
+Tong cac delta cho phep truy vet viec tien di chuyen giua cac bucket, thay vi chi luu so du cuoi.
+
+Quy tac chinh:
+
+- Dat xe bang WALLET: `available -> held` va payment chuyen `AUTHORIZED`.
+- Hoan thanh: capture tu `held`; phan giu duoc release ve `available`; thieu tien tao `platform_receivable`.
+- Thu nhap tai xe khong tien mat: vao `pending_settlement`, job doi soat moi release sang `available`.
+- Tao lenh rut: `available -> held`; duyet thi consume `held`, tu choi thi release.
+- Nap tien uu tien tat toan `platform_receivable`, phan con lai moi vao `available`.
+
+### 3.7 Refund va doi soat
+
+`refund_requests` lien ket voi payment, ride va customer; luu so tien, ly do, nguoi yeu cau,
+nguoi duyet, trang thai va ly do tu choi. Khi tao request, khoan hoan nam trong
+`pending_settlement`; chi khi admin duyet moi ghi co `available_balance`.
+
+`payment_webhook_events` luu moi giao dich provider hop le ve chu ky, ke ca giao dich khong
+tim thay reference. Cac cot quan trong gom expected amount, paid/expiry time, source
+(`WEBHOOK`/`PROVIDER_POLL`), target va hai lop trang thai:
+
+- Classification: `EXACT`, `UNDERPAID`, `OVERPAID`, `REFERENCE_NOT_FOUND`, `DUPLICATE`, `EXPIRED`.
+- Reconciliation status: `MATCHED`, `REVIEW_REQUIRED`, `RESOLVED`, `IGNORED`.
+
+`reconciliation_runs` luu cua so doi soat, so giao dich provider, so exact/exception/duplicate,
+trang thai `RUNNING|COMPLETED|FAILED` va loi neu co.
 
 ## 4. Quan he du lieu
 
@@ -156,12 +203,14 @@ users(customer) 1--N rides
 driver_profiles 1--N rides
 rides 1--N ride_status_logs
 rides 1--1 payments
+payments 1--N refund_requests
 rides 1--1 ratings
 promotions 1--N promotion_usages
 driver_profiles 1--1 driver_wallets
 driver_wallets 1--N wallet_transactions
 users 1--1 customer_wallets
 customer_wallets 1--N customer_wallet_transactions
+wallet_top_ups 1--N customer_wallet_transactions
 rides 1--N ride_location_points
 rides 1--1 invoices
 users 1--N auth_sessions
@@ -178,6 +227,12 @@ rides N--N driver_profiles qua ride_rejections
 - `driver_locations(driver_id)`.
 - `driver_locations(lat, lng)`; co the nang cap sang cot `POINT` va Spatial Index cua MySQL khi can truy van ban kinh lon.
 - `payments(status, created_at)`.
+- `payments(payment_reference)` unique index.
+- `payment_webhook_events(provider_transaction_id)` unique index de bao dam idempotency.
+- `payment_webhook_events(classification, reconciliation_status, created_at)`.
+- `refund_requests(status, created_at)` va `refund_requests(payment_id, status)`.
+- `reconciliation_runs(provider, started_at)`.
+- Ledger: `(wallet_id, created_at)` cho ca vi khach va vi tai xe.
 - `promotions(code)` unique index.
 - `auth_sessions(userId)`.
 - `ride_rejections(rideId, driverId)` composite primary key.
@@ -204,10 +259,28 @@ NO_DRIVER_FOUND
 
 ```text
 PENDING
+AUTHORIZED
+PARTIALLY_PAID
 PAID
 FAILED
+VOIDED
+REFUND_PENDING
 REFUNDED
 ```
+
+### Financial invariants
+
+```text
+available_balance >= 0
+held_balance >= 0
+pending_settlement >= 0
+platform_receivable >= 0
+captured_amount >= refunded_amount
+provider_transaction_id chi duoc ingest mot lan
+```
+
+Moi thao tac tai chinh (hold/capture/release, top-up, settlement, withdrawal, refund,
+doi soat va export bao cao) dong thoi ghi `audit_logs` trong cung database transaction.
 
 ### Driver verification status
 

@@ -37,3 +37,17 @@ export const withdrawalListSchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20)
 });
+
+export const refundParamSchema = z.object({
+  id: z.string().uuid()
+});
+
+export const refundListSchema = z.object({
+  status: z.enum(["PENDING", "APPROVED", "REJECTED"]).optional(),
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20)
+});
+
+export const rejectRefundSchema = z.object({
+  reason: z.string().trim().min(3).max(191)
+});

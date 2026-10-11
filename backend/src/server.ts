@@ -4,6 +4,7 @@ import { env } from "./config/env";
 import { prisma } from "./config/prisma";
 import { registerSocketServer } from "./realtime/socket";
 import { startMatchingWorker } from "./modules/matching/matching.service";
+import { startReconciliationWorker } from "./modules/payments/reconciliation.service";
 
 async function bootstrap() {
   await prisma.$connect();
@@ -12,6 +13,7 @@ async function bootstrap() {
 
   registerSocketServer(server);
   const stopMatchingWorker = startMatchingWorker();
+  const stopReconciliationWorker = startReconciliationWorker();
 
   server.listen(env.port, () => {
     console.log(`${env.appName} is running at http://localhost:${env.port}`);
@@ -19,6 +21,7 @@ async function bootstrap() {
 
   const shutdown = async () => {
     stopMatchingWorker();
+    stopReconciliationWorker();
     await prisma.$disconnect();
     server.close(() => process.exit(0));
   };

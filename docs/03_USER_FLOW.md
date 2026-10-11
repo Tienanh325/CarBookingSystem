@@ -94,14 +94,18 @@ Chuyen hoan thanh
   -> Tinh quang duong, thoi gian va thoi gian cho thuc te
   -> Backend tinh gia cuoi cung theo pricing snapshot luc dat xe
   -> Ap phi phat sinh/phu phi/khuyen mai
-  -> Tao payment transaction
+  -> Tao/cap nhat payment transaction
   -> Neu tien mat:
       -> Tai xe thu tien
       -> Ghi nhan cash payment
-  -> Neu online:
-      -> Gui yeu cau sang payment gateway
-      -> Nhan webhook ket qua
-      -> Cap nhat PAID/FAILED
+  -> Neu GoRide Wallet:
+      -> Khi dat xe: giu gia uoc tinh (available -> held), payment AUTHORIZED
+      -> Khi hoan thanh: capture gia thuc te
+      -> Release tien giu du hoac ghi platform receivable neu thieu
+  -> Neu VietQR:
+      -> Nhan webhook/doi soat provider
+      -> EXACT: cap nhat PAID
+      -> Sai lech/trung/het han/mat reference: REVIEW_REQUIRED
   -> Tao hoa don
   -> Cap nhat thu nhap tai xe
 ```
@@ -112,8 +116,27 @@ Chuyen hoan thanh
 SCHEDULED/SEARCHING_DRIVER -> mien phi
 ACCEPTED/DRIVER_ARRIVING -> phi huy sau khi tai xe nhan
 ARRIVED -> phi huy tai diem don
-WALLET/VIETQR da thanh toan -> hoan phan chenh lech vao GoRide Wallet
+WALLET dang giu -> capture phi huy va release phan con lai
+VIETQR/WALLET da capture -> tao refund PENDING cho admin duyet
 CASH/chua thanh toan -> tao payment PENDING cho phi huy
+```
+
+## 5.2 Flow refund va doi soat
+
+```text
+Customer/he thong tao refund request
+  -> Tang pending settlement cua vi khach
+  -> Admin kiem tra
+      -> APPROVE: pending settlement -> available, cap nhat refunded amount
+      -> REJECT: giai toa pending settlement, luu ly do
+  -> Ghi ledger va audit log trong cung transaction
+
+Job doi soat dinh ky/admin chay thu cong
+  -> Lay giao dich provider theo cua so thoi gian
+  -> Kiem tra reference, amount, expiry, transaction id
+  -> EXACT: ghi nhan tu dong
+  -> UNDER/OVER/MISSING/DUPLICATE/EXPIRED: dua vao hang review
+  -> Admin ACCEPT ngoai le hop le hoac IGNORE
 ```
 
 ## 6. Flow admin duyet tai xe

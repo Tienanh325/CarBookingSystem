@@ -14,6 +14,8 @@ Module de xuat:
 - Matching Module.
 - Pricing Module.
 - Payment Module.
+- Wallet/Ledger Module.
+- Reconciliation Worker.
 - Promotion Module.
 - Notification Module.
 - Support Module.
@@ -112,7 +114,21 @@ Vi du request tao chuyen:
 | GET | `/api/drivers/me/wallet` | Bang ke vi tai xe |
 | POST | `/api/drivers/me/withdrawals` | Tao yeu cau rut tien |
 
-### 3.5 Admin API
+### 3.5 Wallet/Payment API
+
+| Method | Endpoint | Mo ta | Auth |
+| --- | --- | --- | --- |
+| GET | `/api/customers/me/wallet` | Bon bucket so du va ledger vi khach | Customer |
+| POST | `/api/customers/me/wallet/top-ups` | Tao lenh nap tien/QR VietQR | Customer |
+| GET | `/api/payments/rides/{id}` | Payment, reference va refund cua chuyen | Customer/Admin |
+| POST | `/api/payments/rides/{id}/refunds` | Tao yeu cau hoan tien | Customer |
+| POST | `/api/payments/vietqr/ipn` | Nhan giao dich, verify HMAC va phan loai | HMAC |
+
+Thanh toan WALLET dung authorize/capture: khi dat xe he thong chuyen tien
+`available -> held`; khi hoan thanh moi capture gia thuc te. Tien giu duoc release khi gia
+thuc te thap hon hoac chuyen bi huy. Refund khong ghi co truc tiep ma tao request cho admin.
+
+### 3.6 Admin API
 
 | Method | Endpoint | Mo ta |
 | --- | --- | --- |
@@ -128,11 +144,43 @@ Vi du request tao chuyen:
 | POST | `/api/admin/rides/{id}/cancel` | Admin huy chuyen |
 | GET | `/api/admin/payments` | Danh sach thanh toan |
 | GET | `/api/admin/reports/revenue` | Bao cao doanh thu |
+| GET | `/api/admin/reports/finance.csv?period=day|month&date=...` | CSV doanh thu, hoa hong, cash, top-up, refund, withdrawal |
 | GET | `/api/admin/withdrawals` | Danh sach yeu cau rut |
 | POST | `/api/admin/withdrawals/{id}/approve` | Duyet rut tien |
 | POST | `/api/admin/withdrawals/{id}/reject` | Tu choi rut tien |
+| GET | `/api/admin/refunds` | Danh sach yeu cau hoan tien |
+| POST | `/api/admin/refunds/{id}/approve` | Duyet va ghi co vi khach |
+| POST | `/api/admin/refunds/{id}/reject` | Tu choi hoan tien |
+| POST | `/api/admin/reconciliation/run` | Chay job doi soat ngay |
+| GET | `/api/admin/reconciliation/runs` | Lich su job doi soat |
+| GET | `/api/admin/reconciliation/items` | Giao dich/ngoai le theo phan loai |
+| POST | `/api/admin/reconciliation/items/{id}/resolve` | ACCEPT hoac IGNORE ngoai le |
 
-### 3.6 Pricing/Promotion API
+### 3.7 Doi soat provider
+
+Worker chay khi server khoi dong va lap lai theo `RECONCILIATION_INTERVAL_MINUTES`.
+No doc giao dich trong `RECONCILIATION_LOOKBACK_HOURS`, ingest qua cung mot ham voi IPN,
+danh dau payment/top-up PENDING da het han va settlement thu nhap tai xe.
+
+Provider adapter duoc cau hinh qua:
+
+```env
+VIETQR_RECONCILIATION_URL=https://provider.example/transactions
+VIETQR_RECONCILIATION_TOKEN=secret-bearer-token
+RECONCILIATION_INTERVAL_MINUTES=15
+RECONCILIATION_LOOKBACK_HOURS=48
+```
+
+Backend goi `GET VIETQR_RECONCILIATION_URL?from=<ISO>&to=<ISO>` voi Bearer token neu co.
+Response chap nhan mot array hoac `{ "transactions": [...] }`; moi item gom
+`transactionId`, `reference`, `amount`, `paidAt`. Neu chua cau hinh URL, job van expire
+lenh cu va settlement ledger noi bo, nhung khong fetch provider.
+
+Phan loai: `EXACT`, `UNDERPAID`, `OVERPAID`, `REFERENCE_NOT_FOUND`, `DUPLICATE`,
+`EXPIRED`. Chi `EXACT` tu dong ghi nhan. Cac ngoai le vao `REVIEW_REQUIRED`; admin co the
+ACCEPT sai lech co target hoac IGNORE. Missing reference va duplicate chi duoc IGNORE.
+
+### 3.8 Pricing/Promotion API
 
 | Method | Endpoint | Mo ta |
 | --- | --- | --- |
@@ -180,12 +228,12 @@ Tinh ban kinh, xep hang theo ETA/rating va chia vong matching la phase nang cap 
 - Phan quyen theo Role-Based Access Control.
 - Validate tat ca request body.
 - Rate limit API dang nhap, OTP, dat xe.
-- Log thao tac admin vao `audit_logs`.
+- Log moi thao tac tai chinh va thao tac admin vao `audit_logs`; ghi log trong cung transaction nghiep vu.
 - Khong tra ve thong tin nhay cam nhu password hash, token, giay to ca nhan khong can thiet.
 - Webhook thanh toan phai xac minh chu ky.
 - API tai xe chi duoc thao tac tren chuyen duoc gan cho chinh tai xe do.
 - Logout xoa session va ngat ngay cac Socket.IO client thuoc session do.
-- OTP, CARD va WALLET tra loi chua cau hinh thay vi gia lap thanh cong.
+- OTP va CARD tra loi chua cau hinh thay vi gia lap thanh cong.
 
 ## 7. Xu ly loi API chuan
 

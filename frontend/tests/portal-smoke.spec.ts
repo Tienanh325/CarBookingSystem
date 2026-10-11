@@ -154,7 +154,10 @@ test("admin loads every operational screen from backend data", async ({ page }) 
     "Khuyến mãi",
     "Tài khoản",
     "Thanh toán",
-    "Rút tiền"
+    "Rút tiền",
+    "Hoàn tiền",
+    "Đối soát",
+    "Báo cáo CSV"
   ]) {
     await page.getByRole("button", { name: section, exact: true }).click();
     await expect(page.locator("h1", { hasText: section })).toBeVisible();

@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: GoRide API
-  version: 1.1.0
-  description: API đặt xe, điều phối, thanh toán, ví và quản trị GoRide.
+  version: 1.2.0
+  description: API đặt xe, điều phối, thanh toán, ledger ví, đối soát và quản trị GoRide.
 servers:
   - url: http://localhost:4000
     description: Local
@@ -189,7 +189,8 @@ paths:
   /api/customers/me/wallet:
     get:
       tags: [Wallets]
-      summary: Ví và lịch sử giao dịch khách hàng
+      summary: Ví 4 bucket và lịch sử ledger của khách hàng
+      description: Trả về availableBalance, heldBalance, pendingSettlement và platformReceivable.
       security: [{ bearerAuth: [] }]
       responses:
         '200': { $ref: '#/components/responses/Success' }
@@ -215,10 +216,18 @@ paths:
       security: [{ bearerAuth: [] }]
       responses:
         '201': { $ref: '#/components/responses/Success' }
+  /api/drivers/me/wallet:
+    get:
+      tags: [Wallets]
+      summary: Ví 4 bucket, hoa hồng và bảng kê thu nhập tài xế
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
   /api/payments/vietqr/ipn:
     post:
       tags: [Payments]
-      summary: IPN VietQR, xác thực HMAC-SHA256
+      summary: IPN VietQR, xác thực HMAC-SHA256 và phân loại đối soát
+      description: Chỉ giao dịch EXACT được ghi nhận tự động; sai lệch được lưu để admin xử lý.
       requestBody:
         required: true
         content:
@@ -227,6 +236,21 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '401': { $ref: '#/components/responses/Error' }
+  /api/payments/rides/{id}/refunds:
+    post:
+      tags: [Payments]
+      summary: Tạo yêu cầu hoàn tiền cho khoản thanh toán chuyến đi
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateRefundRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Success' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
   /api/admin/withdrawals/{id}/approve:
     post:
       tags: [Admin]
@@ -239,6 +263,110 @@ paths:
           schema: { type: string, format: uuid }
       responses:
         '200': { $ref: '#/components/responses/Success' }
+  /api/admin/refunds:
+    get:
+      tags: [Admin]
+      summary: Danh sách yêu cầu hoàn tiền
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [PENDING, APPROVED, REJECTED] }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/admin/refunds/{id}/approve:
+    post:
+      tags: [Admin]
+      summary: Duyệt hoàn tiền và ghi có vào ví khả dụng
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/EntityId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/admin/refunds/{id}/reject:
+    post:
+      tags: [Admin]
+      summary: Từ chối yêu cầu hoàn tiền
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/EntityId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RejectRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/admin/reconciliation/run:
+    post:
+      tags: [Admin]
+      summary: Chạy đối soát provider ngay lập tức
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/admin/reconciliation/runs:
+    get:
+      tags: [Admin]
+      summary: Lịch sử các lần chạy đối soát
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/admin/reconciliation/items:
+    get:
+      tags: [Admin]
+      summary: Danh sách giao dịch và ngoại lệ đối soát
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: classification
+          schema: { $ref: '#/components/schemas/ReconciliationClassification' }
+        - in: query
+          name: status
+          schema: { type: string, enum: [MATCHED, REVIEW_REQUIRED, RESOLVED, IGNORED] }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/admin/reconciliation/items/{id}/resolve:
+    post:
+      tags: [Admin]
+      summary: Chấp nhận hoặc bỏ qua ngoại lệ đối soát
+      description: REFERENCE_NOT_FOUND và DUPLICATE chỉ có thể được bỏ qua.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/EntityId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResolveReconciliationRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/admin/reports/finance.csv:
+    get:
+      tags: [Admin]
+      summary: Xuất báo cáo tài chính CSV theo ngày hoặc tháng
+      description: Doanh thu là tổng gross captured; refund được xuất thành chỉ tiêu riêng. Múi giờ báo cáo là Asia/Saigon.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: period
+          required: true
+          schema: { type: string, enum: [day, month] }
+        - in: query
+          name: date
+          required: true
+          description: YYYY-MM-DD cho day hoặc YYYY-MM cho month.
+          schema: { type: string, pattern: '^\d{4}-\d{2}(?:-\d{2})?$' }
+      responses:
+        '200':
+          description: Tệp CSV UTF-8 có BOM
+          content:
+            text/csv:
+              schema: { type: string }
   /api/admin/surcharges/context/weather:
     patch:
       tags: [Admin]
@@ -266,6 +394,19 @@ components:
       name: id
       required: true
       schema: { type: string, format: uuid }
+    EntityId:
+      in: path
+      name: id
+      required: true
+      schema: { type: string, format: uuid }
+    Page:
+      in: query
+      name: page
+      schema: { type: integer, minimum: 1, default: 1 }
+    Limit:
+      in: query
+      name: limit
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
   schemas:
     Point:
       type: object
@@ -304,6 +445,26 @@ components:
         amount: { type: integer, minimum: 1 }
         paidAt: { type: string, format: date-time }
         signature: { type: string, pattern: '^[a-fA-F0-9]{64}$' }
+    CreateRefundRequest:
+      type: object
+      required: [amount, reason]
+      properties:
+        amount: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 3, maxLength: 191 }
+    RejectRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 3, maxLength: 191 }
+    ReconciliationClassification:
+      type: string
+      enum: [EXACT, UNDERPAID, OVERPAID, REFERENCE_NOT_FOUND, DUPLICATE, EXPIRED]
+    ResolveReconciliationRequest:
+      type: object
+      required: [action, note]
+      properties:
+        action: { type: string, enum: [ACCEPT, IGNORE] }
+        note: { type: string, minLength: 3, maxLength: 191 }
     ApiError:
       type: object
       properties:

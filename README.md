@@ -7,7 +7,9 @@ He thong dat xe va quan ly van hanh online tuong tu Xanh SM. Workspace da co bac
 - Backend modular monolith: Express 5, TypeScript, Prisma, MySQL.
 - Access token + refresh session luu database, RBAC va thu hoi socket khi logout.
 - Tinh gia, lich hen, matching theo ban kinh, PIN bat dau, GPS thuc te, phi cho/huy, hoa don va rating.
-- Thanh toan CASH/VietQR/GoRide Wallet, IPN idempotent, hoa hong va quy trinh rut tien.
+- Thanh toan CASH/VietQR/GoRide Wallet voi hold/capture, ledger 4 bucket va IPN idempotent.
+- Doi soat VietQR dinh ky, phan loai sai lech, refund co phe duyet va audit tai chinh day du.
+- Bang ke thu nhap/hoa hong, quy trinh rut tien va bao cao CSV theo ngay/thang.
 - Phu phi linh hoat theo khung gio va tinh trang thoi tiet.
 - Duyet tai xe, quan ly user/chuyen, bang gia, khuyen mai, payment va dashboard doanh thu.
 - Realtime request/status/location qua Socket.IO voi room duoc phan quyen.
@@ -75,7 +77,7 @@ npm run test:e2e
 
 ## Gioi han hien tai
 
-- VietQR da co QR va IPN HMAC, nhung production can adapter/doi soat theo nha cung cap ngan hang thuc te.
+- VietQR da co QR, IPN HMAC va adapter doi soat HTTP cau hinh duoc; production van can chot payload, retry, han muc va SLA voi provider/ngan hang thuc te.
 - GPS chi lay mau khi tai xe cap nhat vi tri; diem nhay bat hop ly duoc loai va fallback ve uoc tinh.
 - OTP SMS, push notification, object storage va Redis/queue la cac tich hop production tiep theo.
 - OSRM, Photon va OpenStreetMap public phu hop demo; production nen dung provider/instance co SLA.

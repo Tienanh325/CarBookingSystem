@@ -75,3 +75,22 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}, retry 
 }
 export const mutate = <T>(path: string, body: unknown = {}, method = "POST") =>
   apiRequest<T>(path, { method, body: JSON.stringify(body) });
+
+export async function downloadFile(path: string, retry = true): Promise<{ blob: Blob; filename: string }> {
+  const current = session();
+  const response = await fetch(API_URL + path, {
+    headers: current ? { Authorization: "Bearer " + current.tokens.accessToken } : {},
+    signal: AbortSignal.timeout(15000)
+  });
+  if (response.status === 401 && retry && current) {
+    await refreshSession();
+    return downloadFile(path, false);
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new ApiRequestError(payload?.error?.message ?? "Không thể tải báo cáo", response.status);
+  }
+  const disposition = response.headers.get("content-disposition") ?? "";
+  const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] ?? "goride-report.csv";
+  return { blob: await response.blob(), filename };
+}

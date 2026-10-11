@@ -44,7 +44,11 @@ export const env = {
   vietQrAccountName: process.env.VIETQR_ACCOUNT_NAME ?? "GORIDE",
   vietQrTemplate: process.env.VIETQR_TEMPLATE ?? "compact2",
   vietQrWebhookSecret: process.env.VIETQR_WEBHOOK_SECRET ?? "dev-vietqr-secret-change-me",
-  vietQrPaymentTtlMinutes: readNumber("VIETQR_PAYMENT_TTL_MINUTES", 15)
+  vietQrPaymentTtlMinutes: readNumber("VIETQR_PAYMENT_TTL_MINUTES", 15),
+  vietQrReconciliationUrl: process.env.VIETQR_RECONCILIATION_URL,
+  vietQrReconciliationToken: process.env.VIETQR_RECONCILIATION_TOKEN,
+  reconciliationIntervalMinutes: readNumber("RECONCILIATION_INTERVAL_MINUTES", 15),
+  reconciliationLookbackHours: readNumber("RECONCILIATION_LOOKBACK_HOURS", 48)
 };
 
 export const isProduction = env.nodeEnv === "production";

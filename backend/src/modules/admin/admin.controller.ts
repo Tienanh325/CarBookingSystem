@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { asyncHandler } from "../../utils/async-handler";
 import { ok } from "../../utils/response";
 import * as service from "./admin.service";
+import { financeCsvReport } from "./finance-report.service";
 
 export const dashboard = asyncHandler(async (_req: Request, res: Response) => {
   res.json(ok(await service.dashboard()));
@@ -66,4 +67,11 @@ export const listPayments = asyncHandler(async (req: Request, res: Response) => 
 
 export const revenueReport = asyncHandler(async (_req: Request, res: Response) => {
   res.json(ok(await service.revenueReport()));
+});
+
+export const financeCsvReportDownload = asyncHandler(async (req: Request, res: Response) => {
+  const report = await financeCsvReport(req.auth!.userId, req.query as never);
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${report.filename}"`);
+  res.send(report.csv);
 });

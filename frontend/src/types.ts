@@ -75,8 +75,12 @@ export type VietQr = {
 };
 export type Payment = {
   id: string;
+  rideId: string;
   status: string;
   amount: string;
+  authorizedAmount?: string;
+  capturedAmount?: string;
+  refundedAmount?: string;
   method: string;
   paymentReference?: string | null;
   expiresAt?: string | null;
@@ -92,7 +96,7 @@ export type Driver = {
   totalRides: number;
   vehicles: { id: string; plateNumber: string; model?: string; color?: string; vehicleType: VehicleType }[];
   location?: { lat: string | number; lng: string | number; updatedAt: string } | null;
-  wallet?: { balance: string } | null;
+  wallet?: { availableBalance: string; heldBalance: string; pendingSettlement: string } | null;
 };
 export type Estimate = {
   vehicleType: VehicleType;
@@ -114,6 +118,10 @@ export type Estimate = {
 export type CustomerWallet = {
   id: string;
   balance: number;
+  availableBalance: number;
+  heldBalance: number;
+  pendingSettlement: number;
+  platformReceivable: number;
   currency: string;
   transactions: WalletEntry[];
   pendingTopUps: { id: string; amount: string; paymentReference: string; expiresAt: string }[];
@@ -121,6 +129,10 @@ export type CustomerWallet = {
 export type WalletEntry = {
   id: string;
   amount: string;
+  availableDelta?: string;
+  heldDelta?: string;
+  pendingSettlementDelta?: string;
+  platformReceivableDelta?: string;
   type: string;
   description?: string | null;
   createdAt: string;
@@ -130,6 +142,9 @@ export type DriverWallet = {
   balance: number;
   pendingBalance: number;
   availableBalance: number;
+  heldBalance: number;
+  pendingSettlement: number;
+  platformReceivable: number;
   currency: string;
   completedRides: number;
   commissionRate: number;
@@ -147,6 +162,38 @@ export type Withdrawal = {
   rejectionReason?: string | null;
   createdAt: string;
   driver?: Driver;
+};
+export type RefundRequest = {
+  id: string;
+  amount: string;
+  reason: string;
+  status: string;
+  rejectionReason?: string | null;
+  createdAt: string;
+  payment: Payment & { customer: User; ride: Ride };
+};
+export type ReconciliationItem = {
+  id: string;
+  providerTransactionId: string;
+  paymentReference: string;
+  amount: string;
+  expectedAmount?: string | null;
+  classification: string;
+  reconciliationStatus: string;
+  source: string;
+  duplicateCount: number;
+  paidAt?: string | null;
+  createdAt: string;
+};
+export type ReconciliationRun = {
+  id: string;
+  status: string;
+  fetchedCount: number;
+  exactCount: number;
+  exceptionCount: number;
+  duplicateCount: number;
+  startedAt: string;
+  finishedAt?: string | null;
 };
 export type Page<T> = { items: T[]; total: number; page: number; limit: number };
 export type Pricing = {
@@ -194,8 +241,12 @@ export const labels: Record<string, string> = {
   ONLINE: "Online",
   OFFLINE: "Offline",
   BUSY: "Đang có chuyến",
+  AUTHORIZED: "Đã giữ tiền",
+  PARTIALLY_PAID: "Thanh toán thiếu",
   PAID: "Đã thanh toán",
   FAILED: "Thất bại",
+  VOIDED: "Đã hủy giữ tiền",
+  REFUND_PENDING: "Chờ hoàn tiền",
   REFUNDED: "Đã hoàn tiền",
   ACTIVE: "Hoạt động",
   LOCKED: "Đã khóa",
@@ -204,6 +255,21 @@ export const labels: Record<string, string> = {
   RIDE_EARNING: "Doanh thu chuyến",
   COMMISSION: "Hoa hồng nền tảng",
   CASH_COLLECTION: "Tiền mặt đã thu",
+  HOLD: "Giữ tiền",
+  CAPTURE: "Quyết toán",
+  RELEASE: "Giải phóng tiền giữ",
+  SETTLEMENT: "Chờ quyết toán",
+  RECEIVABLE: "Khoản phải thu",
+  EXACT: "Nhận đúng",
+  UNDERPAID: "Nhận thiếu",
+  OVERPAID: "Nhận thừa",
+  REFERENCE_NOT_FOUND: "Không tìm thấy reference",
+  DUPLICATE: "Trùng giao dịch",
+  EXPIRED: "Giao dịch quá hạn",
+  REVIEW_REQUIRED: "Cần đối soát",
+  MATCHED: "Đã khớp",
+  RESOLVED: "Đã xử lý",
+  IGNORED: "Đã bỏ qua",
   WITHDRAWAL: "Rút tiền"
 };
 export const terminal = (status: string) =>
