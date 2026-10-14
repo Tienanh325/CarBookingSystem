@@ -8,6 +8,8 @@ const PUBLIC_OPERATIONS = new Set([
   "GET /api/vehicle-types",
   "POST /api/auth/register",
   "POST /api/auth/login",
+  "POST /api/auth/forgot-password",
+  "POST /api/auth/reset-password",
   "POST /api/auth/send-otp",
   "POST /api/auth/verify-otp",
   "POST /api/auth/refresh-token",
@@ -43,6 +45,11 @@ const ROUTE_SOURCES: RouteSource[] = [
     file: "src/modules/promotions/promotion.routes.ts",
     prefix: "/api/promotions",
     router: "promotionRouter"
+  },
+  {
+    file: "src/modules/notifications/notification.routes.ts",
+    prefix: "/api/notifications",
+    router: "notificationRouter"
   }
 ];
 
@@ -111,8 +118,8 @@ describe("OpenAPI contract", () => {
     const actual = mountedExpressOperations();
     const documented = new Set(documentedOperations(openApiDocument).keys());
 
-    expect(actual.size).toBe(79);
-    expect(documented.size).toBe(79);
+    expect(actual.size).toBe(87);
+    expect(documented.size).toBe(87);
     expect([...actual].filter((operation) => !documented.has(operation))).toEqual([]);
     expect([...documented].filter((operation) => !actual.has(operation))).toEqual([]);
   });

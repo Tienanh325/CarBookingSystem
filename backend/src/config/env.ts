@@ -28,6 +28,12 @@ export const env = {
   jwtAccessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? "15m",
   jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? "7d",
   otpExpiresMinutes: readNumber("OTP_EXPIRES_MINUTES", 5),
+  passwordResetTtlMinutes: readNumber("PASSWORD_RESET_TTL_MINUTES", 15),
+  passwordResetWebhookUrl: process.env.PASSWORD_RESET_WEBHOOK_URL,
+  passwordResetWebhookToken: process.env.PASSWORD_RESET_WEBHOOK_TOKEN,
+  webPushPublicKey: process.env.WEB_PUSH_PUBLIC_KEY,
+  webPushPrivateKey: process.env.WEB_PUSH_PRIVATE_KEY,
+  webPushSubject: process.env.WEB_PUSH_SUBJECT ?? "mailto:admin@goride.local",
   routingBaseUrl: process.env.ROUTING_BASE_URL ?? "https://router.project-osrm.org",
   mapboxAccessToken: process.env.MAPBOX_ACCESS_TOKEN,
   geocodingBaseUrl: process.env.GEOCODING_BASE_URL ?? "https://photon.komoot.io",
@@ -60,6 +66,14 @@ if (env.platformCommissionRate < 0 || env.platformCommissionRate >= 1) {
 
 if (env.driverLocationMaxAgeSeconds <= 0) {
   throw new Error("DRIVER_LOCATION_MAX_AGE_SECONDS must be greater than 0");
+}
+
+if (env.passwordResetTtlMinutes <= 0) {
+  throw new Error("PASSWORD_RESET_TTL_MINUTES must be greater than 0");
+}
+
+if (Boolean(env.webPushPublicKey) !== Boolean(env.webPushPrivateKey)) {
+  throw new Error("WEB_PUSH_PUBLIC_KEY and WEB_PUSH_PRIVATE_KEY must be configured together");
 }
 
 if (isProduction) {

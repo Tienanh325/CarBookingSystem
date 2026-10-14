@@ -196,23 +196,25 @@ model User {
   createdAt    DateTime   @default(now()) @map("created_at")
   updatedAt    DateTime   @updatedAt @map("updated_at")
 
-  roles           UserRole[]
-  customerProfile CustomerProfile?
-  driverProfile   DriverProfile?
-  addresses       Address[]
-  rides           Ride[]           @relation("CustomerRides")
-  statusLogs      RideStatusLog[]  @relation("RideStatusChangedBy")
-  ratingsGiven    Rating[]         @relation("RatingsGiven")
-  ratingsReceived Rating[]         @relation("RatingsReceived")
-  supportTickets  SupportTicket[]  @relation("CustomerTickets")
-  assignedTickets SupportTicket[]  @relation("AssignedTickets")
-  notifications   Notification[]
-  auditLogs       AuditLog[]
-  promotionUsages PromotionUsage[]
-  payments        Payment[]
-  sessions        AuthSession[]
-  customerWallet  CustomerWallet?
-  walletTopUps    WalletTopUp[]
+  roles             UserRole[]
+  customerProfile   CustomerProfile?
+  driverProfile     DriverProfile?
+  addresses         Address[]
+  rides             Ride[]               @relation("CustomerRides")
+  statusLogs        RideStatusLog[]      @relation("RideStatusChangedBy")
+  ratingsGiven      Rating[]             @relation("RatingsGiven")
+  ratingsReceived   Rating[]             @relation("RatingsReceived")
+  supportTickets    SupportTicket[]      @relation("CustomerTickets")
+  assignedTickets   SupportTicket[]      @relation("AssignedTickets")
+  notifications     Notification[]
+  auditLogs         AuditLog[]
+  promotionUsages   PromotionUsage[]
+  payments          Payment[]
+  sessions          AuthSession[]
+  passwordResets    PasswordResetToken[]
+  pushSubscriptions PushSubscription[]
+  customerWallet    CustomerWallet?
+  walletTopUps      WalletTopUp[]
 
   @@map("users")
 }
@@ -862,19 +864,50 @@ model SupportTicket {
 }
 
 model Notification {
-  id        String              @id @default(uuid()) @db.Char(36)
-  userId    String              @map("user_id") @db.Char(36)
-  title     String
-  body      String
-  channel   NotificationChannel @default(IN_APP)
-  data      Json?
-  readAt    DateTime?           @map("read_at")
-  createdAt DateTime            @default(now()) @map("created_at")
+  id          String              @id @default(uuid()) @db.Char(36)
+  userId      String              @map("user_id") @db.Char(36)
+  title       String
+  body        String
+  channel     NotificationChannel @default(IN_APP)
+  data        Json?
+  readAt      DateTime?           @map("read_at")
+  deliveredAt DateTime?           @map("delivered_at")
+  createdAt   DateTime            @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, readAt])
   @@map("notifications")
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid()) @db.Char(36)
+  userId    String   @map("user_id") @db.Char(36)
+  endpoint  String   @unique @db.VarChar(512)
+  p256dh    String   @db.VarChar(512)
+  auth      String   @db.VarChar(512)
+  userAgent String?  @map("user_agent") @db.VarChar(500)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Char(36)
+  userId    String    @map("user_id") @db.Char(36)
+  tokenHash String    @unique @map("token_hash") @db.Char(64)
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("password_reset_tokens")
 }
 
 model AuditLog {

@@ -3,6 +3,7 @@ import { Server } from "socket.io";
 import { env } from "../config/env";
 import { prisma } from "../config/prisma";
 import { authenticate } from "../modules/auth/auth.service";
+import { createStoredNotification } from "../modules/notifications/notification.delivery";
 
 let io: Server | undefined;
 export function registerSocketServer(server: http.Server) {
@@ -75,6 +76,42 @@ export async function notifyRide(id: string, event = "ride.status.changed") {
   emitToUser(ride.customerId, event, payload);
   if (ride.driver) emitToUser(ride.driver.userId, event, payload);
   emitToRide(id, event, payload);
+  const notificationCopy: Partial<Record<typeof ride.status, { title: string; body: string }>> = {
+    SCHEDULED: { title: "Đã đặt lịch chuyến đi", body: "Chuyến đi của bạn đã được lên lịch." },
+    ACCEPTED: { title: "Tài xế đã nhận chuyến", body: "Tài xế đang chuẩn bị đến điểm đón." },
+    DRIVER_ARRIVING: { title: "Tài xế đang đến", body: "Vui lòng sẵn sàng tại điểm đón." },
+    ARRIVED: { title: "Tài xế đã đến", body: "Tài xế đang chờ tại điểm đón." },
+    IN_PROGRESS: { title: "Chuyến đi đã bắt đầu", body: "Chúc bạn có một chuyến đi an toàn." },
+    COMPLETED: { title: "Chuyến đi hoàn thành", body: "Cảm ơn bạn đã sử dụng GoRide." },
+    CANCELLED_BY_CUSTOMER: { title: "Chuyến đi đã hủy", body: "Chuyến đi đã được khách hàng hủy." },
+    CANCELLED_BY_DRIVER: { title: "Chuyến đi đã hủy", body: "Chuyến đi đã được tài xế hủy." },
+    CANCELLED_BY_SYSTEM: { title: "Chuyến đi đã hủy", body: "Chuyến đi đã được hệ thống hủy." },
+    NO_DRIVER_FOUND: { title: "Chưa tìm thấy tài xế", body: "Hiện chưa có tài xế phù hợp cho chuyến đi." }
+  };
+  const copy = notificationCopy[ride.status];
+  if (copy && event !== "ride.matching.updated") {
+    const notifications = await Promise.all([
+      createStoredNotification({
+        userId: ride.customerId,
+        ...copy,
+        data: { rideId: id, url: "/customer" },
+        push: true
+      }),
+      ...(ride.driver
+        ? [
+            createStoredNotification({
+              userId: ride.driver.userId,
+              ...copy,
+              data: { rideId: id, url: "/driver" },
+              push: true
+            })
+          ]
+        : [])
+    ]);
+    notifications.forEach((notification) =>
+      emitToUser(notification.userId, "notification.created", notification)
+    );
+  }
   // Only the driver holding the current persisted offer receives the request.
   const offers = await prisma.driverOffer.findMany({
     where: { rideId: id, status: "PENDING" },

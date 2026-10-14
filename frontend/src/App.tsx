@@ -6,6 +6,7 @@ import { Login } from "./pages/Login";
 import { useLive } from "./services/live";
 import { mutate, saveSession } from "./services/api";
 import { canAccessOperationsPortal } from "./services/rbac";
+import { NotificationCenter } from "./components/NotificationCenter";
 const CustomerPortal = lazy(() =>
   import("./pages/CustomerPortal").then((m) => ({ default: m.CustomerPortal }))
 );
@@ -54,6 +55,7 @@ export default function App() {
           {navigation}
         </nav>
         <div className="global-actions">
+          <NotificationCenter />
           <span
             className={`connection-state ${connected ? "connected" : "reconnecting"}`}
             title={connected ? "Cập nhật trực tiếp" : "Đang kết nối lại"}

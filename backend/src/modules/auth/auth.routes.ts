@@ -5,8 +5,10 @@ import rateLimit from "express-rate-limit";
 import * as controller from "./auth.controller";
 import {
   loginSchema,
+  forgotPasswordSchema,
   refreshTokenSchema,
   registerSchema,
+  resetPasswordSchema,
   sendOtpSchema,
   verifyOtpSchema
 } from "./auth.schemas";
@@ -28,6 +30,8 @@ authRouter.use(
 
 authRouter.post("/register", validate({ body: registerSchema }), controller.register);
 authRouter.post("/login", validate({ body: loginSchema }), controller.login);
+authRouter.post("/forgot-password", validate({ body: forgotPasswordSchema }), controller.forgotPassword);
+authRouter.post("/reset-password", validate({ body: resetPasswordSchema }), controller.resetPassword);
 authRouter.post("/send-otp", validate({ body: sendOtpSchema }), controller.sendOtp);
 authRouter.post("/verify-otp", validate({ body: verifyOtpSchema }), controller.verifyOtp);
 authRouter.post("/refresh-token", validate({ body: refreshTokenSchema }), controller.refreshToken);

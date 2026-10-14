@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../../src/app";
 import { prisma } from "../../src/config/prisma";
 import { signVietQrWebhook } from "../../src/modules/payments/payment.service";
+import { createNotification } from "../../src/modules/notifications/notification.service";
 import type { RoleName } from "../../src/utils/roles";
 
 const databaseConfigured = Boolean(process.env.DATABASE_URL?.trim());
@@ -692,5 +693,60 @@ integrationDescribe("critical API and financial flows", () => {
     expect(await prisma.walletTransaction.count({ where: { walletId: wallet.id, type: "WITHDRAWAL" } })).toBe(
       1
     );
+  });
+
+  it("keeps notification inbox ownership and read state isolated", async () => {
+    const created = await createNotification({
+      userId: actors.CUSTOMER.id,
+      title: "Integration notification",
+      body: "Owned by the primary customer",
+      data: { url: "/customer" }
+    });
+    const inbox = await request(app).get("/api/notifications?limit=10").set(auth(actors.CUSTOMER));
+    expect(inbox.status, JSON.stringify(inbox.body)).toBe(200);
+    expect(inbox.body.data.unread).toBeGreaterThan(0);
+    expect(inbox.body.data.items).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: created.id, readAt: null })])
+    );
+    expect(
+      (await request(app).patch(`/api/notifications/${created.id}/read`).set(auth(secondCustomer))).status
+    ).toBe(404);
+    const marked = await request(app)
+      .patch(`/api/notifications/${created.id}/read`)
+      .set(auth(actors.CUSTOMER));
+    expect(marked.status).toBe(200);
+    expect(marked.body.data.readAt).toBeTruthy();
+  });
+
+  it("uses a single-use password reset token and revokes existing sessions", async () => {
+    const requested = await request(app)
+      .post("/api/auth/forgot-password")
+      .send({ identifier: secondCustomer.phone });
+    expect(requested.status, JSON.stringify(requested.body)).toBe(200);
+    const resetToken = requested.body.data.resetToken as string;
+    expect(resetToken).toMatch(/^[a-f0-9]{64}$/);
+
+    const reset = await request(app)
+      .post("/api/auth/reset-password")
+      .send({ token: resetToken, password: "Changed@123" });
+    expect(reset.status, JSON.stringify(reset.body)).toBe(200);
+    expect((await request(app).get("/api/rides/current").set(auth(secondCustomer))).status).toBe(401);
+    expect(
+      (
+        await request(app)
+          .post("/api/auth/reset-password")
+          .send({ token: resetToken, password: "Another@123" })
+      ).status
+    ).toBe(422);
+    expect(
+      (await request(app).post("/api/auth/login").send({ phone: secondCustomer.phone, password })).status
+    ).toBe(401);
+    expect(
+      (
+        await request(app)
+          .post("/api/auth/login")
+          .send({ phone: secondCustomer.phone, password: "Changed@123" })
+      ).status
+    ).toBe(200);
   });
 });

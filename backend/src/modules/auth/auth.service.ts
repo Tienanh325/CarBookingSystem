@@ -145,6 +145,96 @@ export async function refreshToken(token: string) {
 export async function logout(sessionId: string) {
   await prisma.authSession.deleteMany({ where: { id: sessionId } });
 }
+
+export async function requestPasswordReset(identifierInput: string) {
+  const identifier = identifierInput.trim().toLowerCase();
+  const user = await prisma.user.findFirst({
+    where: {
+      status: "ACTIVE",
+      OR: [{ phone: identifierInput.trim() }, { email: identifier }]
+    },
+    select: { id: true, phone: true, email: true }
+  });
+
+  if (!user) return { accepted: true };
+
+  const token = randomBytes(32).toString("hex");
+  const expiresAt = new Date(Date.now() + env.passwordResetTtlMinutes * 60_000);
+  await prisma.$transaction([
+    prisma.passwordResetToken.deleteMany({ where: { userId: user.id } }),
+    prisma.passwordResetToken.create({
+      data: { userId: user.id, tokenHash: hash(token), expiresAt }
+    })
+  ]);
+
+  if (env.passwordResetWebhookUrl) {
+    try {
+      const response = await fetch(env.passwordResetWebhookUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(env.passwordResetWebhookToken
+            ? { Authorization: `Bearer ${env.passwordResetWebhookToken}` }
+            : {})
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          phone: user.phone,
+          email: user.email,
+          resetToken: token,
+          expiresAt: expiresAt.toISOString()
+        }),
+        signal: AbortSignal.timeout(10_000)
+      });
+      if (!response.ok) throw new Error(`reset delivery returned ${response.status}`);
+    } catch {
+      await prisma.passwordResetToken.deleteMany({ where: { tokenHash: hash(token) } });
+      return { accepted: true };
+    }
+  }
+
+  return {
+    accepted: true,
+    ...(env.nodeEnv === "production" ? {} : { resetToken: token, expiresAt })
+  };
+}
+
+export async function resetPassword(token: string, password: string) {
+  const tokenHash = hash(token);
+  const reset = await prisma.passwordResetToken.findUnique({
+    where: { tokenHash },
+    include: { user: { select: { status: true } } }
+  });
+  if (!reset || reset.usedAt || reset.expiresAt <= new Date() || reset.user.status !== "ACTIVE") {
+    throw new ApiError(
+      422,
+      "PASSWORD_RESET_TOKEN_INVALID",
+      "Ma dat lai mat khau khong hop le hoac da het han"
+    );
+  }
+
+  const sessionIds = await prisma.$transaction(async (tx) => {
+    const claimed = await tx.passwordResetToken.updateMany({
+      where: { id: reset.id, usedAt: null, expiresAt: { gt: new Date() } },
+      data: { usedAt: new Date() }
+    });
+    if (!claimed.count) {
+      throw new ApiError(409, "PASSWORD_RESET_TOKEN_USED", "Ma dat lai mat khau da duoc su dung");
+    }
+    const sessions = await tx.authSession.findMany({
+      where: { userId: reset.userId },
+      select: { id: true }
+    });
+    await tx.user.update({
+      where: { id: reset.userId },
+      data: { passwordHash: await bcrypt.hash(password, 12) }
+    });
+    await tx.authSession.deleteMany({ where: { userId: reset.userId } });
+    return sessions.map((session) => session.id);
+  });
+
+  return { sessionIds };
+}
 export async function sendOtp(_phone: string): Promise<never> {
   throw new ApiError(503, "OTP_NOT_CONFIGURED", "SMS chua duoc cau hinh. Vui long dung mat khau.");
 }

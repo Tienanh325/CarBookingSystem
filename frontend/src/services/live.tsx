@@ -59,7 +59,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       "ride.cancelled",
       "ride.driver-reassigned",
       "payment.updated",
-      "wallet.updated"
+      "wallet.updated",
+      "notification.created"
     ].forEach((e) => client.on(e, changed));
     const timer = window.setInterval(changed, 30000);
     const renew = window.setInterval(() => void refreshSession().catch(() => {}), 10 * 60000);

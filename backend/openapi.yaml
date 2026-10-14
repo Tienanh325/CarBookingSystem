@@ -10,6 +10,7 @@ servers:
 tags:
   - { name: Catalog, description: "Public service and vehicle catalog" }
   - { name: Auth, description: "Registration, login, token rotation, and logout" }
+  - { name: Notifications, description: "In-app inbox and Web Push subscriptions" }
   - { name: Customers, description: "Customer profiles and saved addresses" }
   - { name: Drivers, description: "Driver onboarding, availability, location, and ride workflow" }
   - { name: Rides, description: "Ride estimates, bookings, history, invoices, cancellation, and rating" }
@@ -53,6 +54,31 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/auth/forgot-password:
+    post:
+      tags: [Auth]
+      operationId: requestPasswordReset
+      summary: Request a one-time password reset token
+      description: Always returns an accepted response to avoid account enumeration. Non-production responses include the token for local testing; production delivery uses the configured webhook.
+      security: []
+      requestBody: { $ref: '#/components/requestBodies/ForgotPassword' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/auth/reset-password:
+    post:
+      tags: [Auth]
+      operationId: resetPassword
+      summary: Consume a reset token and replace the password
+      description: Tokens are single-use. A successful reset revokes every existing session for the account.
+      security: []
+      requestBody: { $ref: '#/components/requestBodies/ResetPassword' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
         '429': { $ref: '#/components/responses/RateLimited' }
   /api/auth/send-otp:
@@ -1105,6 +1131,72 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
 
+  /api/notifications:
+    get:
+      tags: [Notifications]
+      operationId: listNotifications
+      summary: List the authenticated user's notifications
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: unreadOnly, schema: { type: boolean, default: false } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/notifications/read-all:
+    post:
+      tags: [Notifications]
+      operationId: markAllNotificationsRead
+      summary: Mark every notification as read
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/notifications/{id}/read:
+    patch:
+      tags: [Notifications]
+      operationId: markNotificationRead
+      summary: Mark one owned notification as read
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/EntityId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/notifications/push/config:
+    get:
+      tags: [Notifications]
+      operationId: getPushConfiguration
+      summary: Get Web Push availability and the public VAPID key
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/notifications/push/subscriptions:
+    post:
+      tags: [Notifications]
+      operationId: subscribeWebPush
+      summary: Register or refresh a Web Push subscription
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/PushSubscription' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+    delete:
+      tags: [Notifications]
+      operationId: unsubscribeWebPush
+      summary: Remove an owned Web Push subscription
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/RemovePushSubscription' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1185,6 +1277,38 @@ components:
       properties:
         phone: { type: string, minLength: 9, maxLength: 15 }
         password: { type: string, format: password, minLength: 6, maxLength: 100 }
+    ForgotPasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [identifier]
+      properties:
+        identifier: { type: string, minLength: 5, maxLength: 191 }
+    ResetPasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [token, password]
+      properties:
+        token: { type: string, minLength: 40, maxLength: 200 }
+        password: { type: string, format: password, minLength: 8, maxLength: 100 }
+    PushSubscriptionRequest:
+      type: object
+      additionalProperties: false
+      required: [endpoint, keys]
+      properties:
+        endpoint: { type: string, format: uri, maxLength: 512 }
+        keys:
+          type: object
+          additionalProperties: false
+          required: [p256dh, auth]
+          properties:
+            p256dh: { type: string, minLength: 20, maxLength: 512 }
+            auth: { type: string, minLength: 8, maxLength: 512 }
+    RemovePushSubscriptionRequest:
+      type: object
+      additionalProperties: false
+      required: [endpoint]
+      properties:
+        endpoint: { type: string, format: uri, maxLength: 512 }
     SendOtpRequest:
       type: object
       additionalProperties: false
@@ -1612,6 +1736,18 @@ components:
     Login:
       required: true
       content: { application/json: { schema: { $ref: '#/components/schemas/LoginRequest' } } }
+    ForgotPassword:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/ForgotPasswordRequest' } } }
+    ResetPassword:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/ResetPasswordRequest' } } }
+    PushSubscription:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/PushSubscriptionRequest' } } }
+    RemovePushSubscription:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/RemovePushSubscriptionRequest' } } }
     SendOtp:
       required: true
       content: { application/json: { schema: { $ref: '#/components/schemas/SendOtpRequest' } } }

@@ -24,3 +24,12 @@ export const verifyOtpSchema = z.object({
 export const refreshTokenSchema = z.object({
   refreshToken: z.string().min(20)
 });
+
+export const forgotPasswordSchema = z.object({
+  identifier: z.string().trim().min(5).max(191)
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(40).max(200),
+  password: z.string().min(8).max(100)
+});

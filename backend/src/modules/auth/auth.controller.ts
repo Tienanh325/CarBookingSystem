@@ -14,6 +14,17 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   res.json(ok(result, "Dang nhap thanh cong"));
 });
 
+export const forgotPassword = asyncHandler(async (req: Request, res: Response) => {
+  const result = await authService.requestPasswordReset(req.body.identifier);
+  res.json(ok(result, "Neu tai khoan ton tai, huong dan dat lai mat khau da duoc gui"));
+});
+
+export const resetPassword = asyncHandler(async (req: Request, res: Response) => {
+  const result = await authService.resetPassword(req.body.token, req.body.password);
+  result.sessionIds.forEach(revokeSockets);
+  res.json(ok({ passwordReset: true }, "Dat lai mat khau thanh cong"));
+});
+
 export const sendOtp = asyncHandler(async (req: Request, res: Response) => {
   const result = await authService.sendOtp(req.body.phone);
   res.json(ok(result, "Da gui OTP"));
