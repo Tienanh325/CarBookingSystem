@@ -12,6 +12,7 @@
     "format": "prisma format && prettier --write \"{src,tests,prisma}/**/*.ts\" \"*.{json,md}\"",
     "format:check": "prettier --check \"{src,tests,prisma}/**/*.ts\" \"*.{json,md}\"",
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.mts",
     "verify:live": "node scripts/verify-live-flow.cjs",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
