@@ -6,7 +6,7 @@ import { estimateRide } from "../pricing/pricing.service";
 import { notifyRide } from "../../realtime/socket";
 import { env } from "../../config/env";
 import { createRidePayment, settleCancelledRidePayment, settleDriverRide } from "../wallets/wallet.service";
-import { createVietQrDetails } from "../payments/payment.service";
+import { decoratePaymentWithVietQr } from "../payments/payment.service";
 import { rideStartPin } from "./ride-pin";
 
 export const activeRideStatuses: RideStatus[] = [
@@ -40,6 +40,15 @@ export const rideInclude = {
 } satisfies Prisma.RideInclude;
 type Point = { address: string; lat: number; lng: number };
 type Stop = Point & { dwellMinutes?: number };
+type RidePaymentSource = Parameters<typeof decoratePaymentWithVietQr>[0];
+
+function decorateRidePayment<T extends { payment: RidePaymentSource | null }>(ride: T) {
+  return {
+    ...ride,
+    payment: ride.payment ? decoratePaymentWithVietQr(ride.payment) : null
+  };
+}
+
 type Input = {
   pickup: Point;
   dropoff: Point;
@@ -146,23 +155,10 @@ export async function createRide(customerId: string, input: Input) {
     { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }
   );
   await notifyRide(ride.id, status === "SCHEDULED" ? "ride.scheduled" : "ride.request.created");
-  return {
+  return decorateRidePayment({
     ...ride,
     startPin: rideStartPin(ride.id),
-    payment: ride.payment
-      ? {
-          ...ride.payment,
-          vietQr:
-            ride.payment.method === "VIETQR" && ride.payment.paymentReference && ride.payment.expiresAt
-              ? createVietQrDetails(
-                  ride.payment.paymentReference,
-                  Number(ride.payment.amount),
-                  ride.payment.expiresAt
-                )
-              : null
-        }
-      : null
-  };
+  });
 }
 export async function estimateRideForCustomer(customerId: string, input: Omit<Input, "paymentMethod">) {
   return estimateRide(input, customerId);
@@ -189,16 +185,19 @@ export async function getCurrentRide(userId: string, roles: RoleName[], scope?: 
     orderBy: { requestedAt: "desc" }
   });
   if (!ride) return null;
-  return ride.customerId === userId ? { ...ride, startPin: rideStartPin(ride.id) } : ride;
+  return decorateRidePayment(
+    ride.customerId === userId ? { ...ride, startPin: rideStartPin(ride.id) } : ride
+  );
 }
 export async function listRides(userId: string, roles: RoleName[], scope?: RideScope) {
   const owner = await getRideOwnerWhere(userId, roles, scope);
-  return prisma.ride.findMany({
+  const rides = await prisma.ride.findMany({
     where: owner,
     include: rideInclude,
     orderBy: { requestedAt: "desc" },
     take: 100
   });
+  return rides.map(decorateRidePayment);
 }
 export async function getRideById(id: string, userId: string, roles: RoleName[]) {
   const ride = await prisma.ride.findUnique({ where: { id }, include: rideInclude });
@@ -209,7 +208,9 @@ export async function getRideById(id: string, userId: string, roles: RoleName[])
     ride.driver?.userId !== userId
   )
     throw new ApiError(403, "RIDE_ACCESS_DENIED", "Khong co quyen xem chuyen");
-  return ride.customerId === userId ? { ...ride, startPin: rideStartPin(ride.id) } : ride;
+  return decorateRidePayment(
+    ride.customerId === userId ? { ...ride, startPin: rideStartPin(ride.id) } : ride
+  );
 }
 function cancellationFeeFor(status: RideStatus, estimatedFare: number) {
   if (["ACCEPTED", "DRIVER_ARRIVING"].includes(status))

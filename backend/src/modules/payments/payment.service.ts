@@ -1,5 +1,10 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
-import { Prisma, type ReconciliationClassification, type ReconciliationSource } from "@prisma/client";
+import {
+  Prisma,
+  type PaymentMethod,
+  type ReconciliationClassification,
+  type ReconciliationSource
+} from "@prisma/client";
 import { env } from "../../config/env";
 import { prisma } from "../../config/prisma";
 import { emitToUser, notifyRide } from "../../realtime/socket";
@@ -35,6 +40,23 @@ export function createVietQrDetails(reference: string, amount: number, expiresAt
     accountName: env.vietQrAccountName,
     qrUrl: `https://img.vietqr.io/image/${encodeURIComponent(image)}?${query.toString()}`,
     expiresAt
+  };
+}
+
+type PaymentWithVietQrSource = {
+  method: PaymentMethod;
+  paymentReference: string | null;
+  expiresAt: Date | null;
+  amount: Prisma.Decimal | number;
+};
+
+export function decoratePaymentWithVietQr<T extends PaymentWithVietQrSource>(payment: T) {
+  return {
+    ...payment,
+    vietQr:
+      payment.method === "VIETQR" && payment.paymentReference && payment.expiresAt
+        ? createVietQrDetails(payment.paymentReference, Number(payment.amount), payment.expiresAt)
+        : null
   };
 }
 
@@ -76,13 +98,7 @@ export async function getRidePayment(userId: string, rideId: string) {
     }
   });
   if (!payment) throw new ApiError(404, "PAYMENT_NOT_FOUND", "Khong tim thay giao dich");
-  return {
-    ...payment,
-    vietQr:
-      payment.method === "VIETQR" && payment.paymentReference && payment.expiresAt
-        ? createVietQrDetails(payment.paymentReference, Number(payment.amount), payment.expiresAt)
-        : null
-  };
+  return decoratePaymentWithVietQr(payment);
 }
 
 async function recordDuplicate(transactionId: string, payload: ProviderTransactionInput) {
