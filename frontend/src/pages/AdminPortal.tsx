@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import {
   Banknote,
   CarFront,
@@ -23,7 +23,8 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import { Feedback, Modal, RideDetails } from "../components/LiveUI";
 import { StatusBadge } from "../components/StatusBadge";
 import { apiRequest, downloadFile, mutate } from "../services/api";
-import { useResource } from "../services/live";
+import { useLive, useResource } from "../services/live";
+import { canAccessAdminSection, canPerformAdminAction, type AdminSection } from "../services/rbac";
 import {
   date,
   labels,
@@ -41,19 +42,6 @@ import {
   type Withdrawal
 } from "../types";
 
-type Section =
-  | "overview"
-  | "rides"
-  | "drivers"
-  | "pricing"
-  | "surcharges"
-  | "promotions"
-  | "users"
-  | "payments"
-  | "withdrawals"
-  | "refunds"
-  | "reconciliation"
-  | "reports";
 const menus = [
   { id: "overview", name: "Tổng quan", icon: LayoutDashboard },
   { id: "rides", name: "Chuyến đi", icon: Route },
@@ -68,6 +56,7 @@ const menus = [
   { id: "reconciliation", name: "Đối soát", icon: RefreshCw },
   { id: "reports", name: "Báo cáo CSV", icon: Download }
 ] as const;
+const noRoles: readonly string[] = [];
 
 function vietnamToday() {
   return new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -134,14 +123,38 @@ function Pager({ page, total, change }: { page: number; total: number; change: (
   );
 }
 export function AdminPortal() {
-  const [section, setSection] = useState<Section>("overview");
+  const { auth } = useLive();
+  const roles = auth?.user.roles ?? noRoles;
+  const allowedMenus = useMemo(() => menus.filter((menu) => canAccessAdminSection(roles, menu.id)), [roles]);
+  const [section, setSection] = useState<AdminSection>(() => allowedMenus[0]?.id ?? "rides");
+  const activeSection = allowedMenus.some((menu) => menu.id === section)
+    ? section
+    : (allowedMenus[0]?.id ?? "rides");
+  const canCancelRides = canPerformAdminAction(roles, "cancelRide");
+  const canManageDrivers = canPerformAdminAction(roles, "manageDrivers");
+  const canManageUsers = canPerformAdminAction(roles, "manageUsers");
+  const canManageSurchargeRules = canPerformAdminAction(roles, "manageSurchargeRules");
+
+  useEffect(() => {
+    if (section !== activeSection) {
+      setSection(activeSection);
+    }
+  }, [activeSection, section]);
+
+  if (!allowedMenus.length) {
+    return <p className="empty-copy">Tài khoản không có quyền sử dụng cổng vận hành.</p>;
+  }
   return (
     <div className="admin-layout">
       <aside className="admin-sidebar">
         <div className="admin-sidebar-label">Vận hành</div>
         <nav aria-label="Điều hướng quản trị">
-          {menus.map((m) => (
-            <button key={m.id} className={m.id === section ? "active" : ""} onClick={() => setSection(m.id)}>
+          {allowedMenus.map((m) => (
+            <button
+              key={m.id}
+              className={m.id === activeSection ? "active" : ""}
+              onClick={() => setSection(m.id)}
+            >
               <m.icon size={18} />
               <span>{m.name}</span>
             </button>
@@ -150,28 +163,34 @@ export function AdminPortal() {
       </aside>
       <main className="admin-main">
         <header className="admin-content-header">
-          <h1>{menus.find((m) => m.id === section)?.name}</h1>
+          <h1>{allowedMenus.find((m) => m.id === activeSection)?.name}</h1>
           <span>{new Date().toLocaleDateString("vi-VN")}</span>
         </header>
         <div className="admin-content">
-          {section === "overview" ? (
+          {activeSection === "overview" ? (
             <Overview openRides={() => setSection("rides")} />
-          ) : section === "pricing" ? (
+          ) : activeSection === "pricing" ? (
             <PricingView />
-          ) : section === "surcharges" ? (
-            <SurchargeView />
-          ) : section === "promotions" ? (
+          ) : activeSection === "surcharges" ? (
+            <SurchargeView canManageRules={canManageSurchargeRules} />
+          ) : activeSection === "promotions" ? (
             <PromotionsView />
-          ) : section === "withdrawals" ? (
+          ) : activeSection === "withdrawals" ? (
             <WithdrawalView />
-          ) : section === "refunds" ? (
+          ) : activeSection === "refunds" ? (
             <RefundView />
-          ) : section === "reconciliation" ? (
+          ) : activeSection === "reconciliation" ? (
             <ReconciliationView />
-          ) : section === "reports" ? (
+          ) : activeSection === "reports" ? (
             <FinanceReportView />
           ) : (
-            <RecordsView key={section} section={section} />
+            <RecordsView
+              key={activeSection}
+              section={activeSection}
+              canCancelRides={canCancelRides}
+              canManageDrivers={canManageDrivers}
+              canManageUsers={canManageUsers}
+            />
           )}
         </div>
       </main>
@@ -262,7 +281,17 @@ type Payment = {
   customer: User;
   ride: Ride;
 };
-function RecordsView({ section }: { section: "rides" | "drivers" | "users" | "payments" }) {
+function RecordsView({
+  section,
+  canCancelRides,
+  canManageDrivers,
+  canManageUsers
+}: {
+  section: "rides" | "drivers" | "users" | "payments";
+  canCancelRides: boolean;
+  canManageDrivers: boolean;
+  canManageUsers: boolean;
+}) {
   const [search, setSearch] = useState(""),
     [query, setQuery] = useState(""),
     [status, setStatus] = useState(""),
@@ -443,9 +472,13 @@ function RecordsView({ section }: { section: "rides" | "drivers" | "users" | "pa
                       <Badge status={u.status} />
                     </td>
                     <td>
-                      <IconAction label="Sửa trạng thái" onClick={() => setSelected(u)}>
-                        <Pencil size={18} />
-                      </IconAction>
+                      {canManageUsers ? (
+                        <IconAction label="Sửa trạng thái" onClick={() => setSelected(u)}>
+                          <Pencil size={18} />
+                        </IconAction>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                   </tr>
                 );
@@ -482,25 +515,28 @@ function RecordsView({ section }: { section: "rides" | "drivers" | "users" | "pa
           {ride && (
             <>
               <RideDetails ride={ride} />
-              {["SEARCHING_DRIVER", "ACCEPTED", "DRIVER_ARRIVING", "ARRIVED"].includes(ride.status) && (
-                <form
-                  className="live-form"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void action("/admin/rides/" + ride.id + "/cancel", {
-                      reason: new FormData(e.currentTarget).get("reason")
-                    });
-                  }}
-                >
-                  <label>
-                    Lý do hủy
-                    <input name="reason" required minLength={3} maxLength={191} />
-                  </label>
-                  <button className="secondary-button danger-text" disabled={busy}>
-                    Xác nhận hủy chuyến
-                  </button>
-                </form>
-              )}
+              {canCancelRides &&
+                ["SCHEDULED", "SEARCHING_DRIVER", "ACCEPTED", "DRIVER_ARRIVING", "ARRIVED"].includes(
+                  ride.status
+                ) && (
+                  <form
+                    className="live-form"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void action("/admin/rides/" + ride.id + "/cancel", {
+                        reason: new FormData(e.currentTarget).get("reason")
+                      });
+                    }}
+                  >
+                    <label>
+                      Lý do hủy
+                      <input name="reason" required minLength={3} maxLength={191} />
+                    </label>
+                    <button className="secondary-button danger-text" disabled={busy}>
+                      Xác nhận hủy chuyến
+                    </button>
+                  </form>
+                )}
             </>
           )}
           {driver && (
@@ -514,41 +550,45 @@ function RecordsView({ section }: { section: "rides" | "drivers" | "users" | "pa
                   .join(", ")}
               </p>
               <Badge status={driver.verificationStatus} />
-              <div className="live-actions">
-                {driver.verificationStatus !== "APPROVED" && (
-                  <button
-                    className="primary-button"
-                    disabled={busy}
-                    onClick={() => void action("/admin/drivers/" + driver.id + "/approve")}
+              {canManageDrivers && (
+                <>
+                  <div className="live-actions">
+                    {driver.verificationStatus !== "APPROVED" && (
+                      <button
+                        className="primary-button"
+                        disabled={busy}
+                        onClick={() => void action("/admin/drivers/" + driver.id + "/approve")}
+                      >
+                        <Check size={18} />
+                        Duyệt hồ sơ
+                      </button>
+                    )}
+                  </div>
+                  <form
+                    className="live-form"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void action("/admin/drivers/" + driver.id + "/reject", {
+                        reason: new FormData(e.currentTarget).get("reason")
+                      });
+                    }}
                   >
-                    <Check size={18} />
-                    Duyệt hồ sơ
-                  </button>
-                )}
-              </div>
-              <form
-                className="live-form"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void action("/admin/drivers/" + driver.id + "/reject", {
-                    reason: new FormData(e.currentTarget).get("reason")
-                  });
-                }}
-              >
-                <label>
-                  Lý do từ chối
-                  <input name="reason" required minLength={3} maxLength={191} />
-                </label>
-                <button
-                  className="secondary-button danger-text"
-                  disabled={busy || driver.onlineStatus === "BUSY"}
-                >
-                  Từ chối hồ sơ
-                </button>
-              </form>
+                    <label>
+                      Lý do từ chối
+                      <input name="reason" required minLength={3} maxLength={191} />
+                    </label>
+                    <button
+                      className="secondary-button danger-text"
+                      disabled={busy || driver.onlineStatus === "BUSY"}
+                    >
+                      Từ chối hồ sơ
+                    </button>
+                  </form>
+                </>
+              )}
             </>
           )}
-          {section === "users" && (
+          {section === "users" && canManageUsers && (
             <form
               className="live-form"
               onSubmit={(e) => {
@@ -1124,7 +1164,7 @@ type Surcharge = {
   isActive: boolean;
   vehicleType?: VehicleType | null;
 };
-function SurchargeView() {
+function SurchargeView({ canManageRules }: { canManageRules: boolean }) {
   const resource = useResource<Surcharge[]>("/admin/surcharges"),
     context = useResource<{ weatherCondition: string }>("/admin/surcharges/context/weather"),
     vehicles = useResource<VehicleType[]>("/vehicle-types");
@@ -1202,10 +1242,12 @@ function SurchargeView() {
             </select>
           </label>
         </div>
-        <button className="primary-button" onClick={() => setCreating(true)}>
-          <Plus size={18} />
-          Thêm phụ phí
-        </button>
+        {canManageRules && (
+          <button className="primary-button" onClick={() => setCreating(true)}>
+            <Plus size={18} />
+            Thêm phụ phí
+          </button>
+        )}
       </div>
       <Feedback error={error || resource.error || context.error} loading={resource.loading} />
       <div className="table-scroll">
@@ -1232,16 +1274,22 @@ function SurchargeView() {
                 <td>{item.multiplier}×</td>
                 <td>{money(item.fixedAmount)}</td>
                 <td>
-                  <button className="text-button" onClick={() => void toggle(item)}>
-                    {item.isActive ? "Đang bật" : "Đang tắt"}
-                  </button>
+                  {canManageRules ? (
+                    <button className="text-button" onClick={() => void toggle(item)}>
+                      {item.isActive ? "Đang bật" : "Đang tắt"}
+                    </button>
+                  ) : item.isActive ? (
+                    "Đang bật"
+                  ) : (
+                    "Đang tắt"
+                  )}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      {creating && (
+      {creating && canManageRules && (
         <Modal title="Thêm phụ phí" close={() => setCreating(false)}>
           <form className="live-form" onSubmit={create}>
             <label>

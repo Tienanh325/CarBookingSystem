@@ -5,6 +5,7 @@ import { Brand } from "./components/Brand";
 import { Login } from "./pages/Login";
 import { useLive } from "./services/live";
 import { mutate, saveSession } from "./services/api";
+import { canAccessOperationsPortal } from "./services/rbac";
 const CustomerPortal = lazy(() =>
   import("./pages/CustomerPortal").then((m) => ({ default: m.CustomerPortal }))
 );
@@ -15,10 +16,11 @@ export default function App() {
   const location = useLocation();
   if (!auth) return <Login />;
   const roles = auth.user.roles;
+  const canUseOperationsPortal = canAccessOperationsPortal(roles);
   const portals = [
     ...(roles.includes("CUSTOMER") ? [{ path: "/customer", label: "Đặt xe", icon: MapPinned }] : []),
     ...(roles.includes("DRIVER") ? [{ path: "/driver", label: "Tài xế", icon: CarTaxiFront }] : []),
-    ...(roles.includes("ADMIN") ? [{ path: "/admin", label: "Điều hành", icon: LayoutDashboard }] : [])
+    ...(canUseOperationsPortal ? [{ path: "/admin", label: "Điều hành", icon: LayoutDashboard }] : [])
   ];
   const home = portals[0]?.path;
   if (!home)
@@ -74,7 +76,7 @@ export default function App() {
           <Routes>
             {roles.includes("CUSTOMER") && <Route path="/customer" element={<CustomerPortal />} />}
             {roles.includes("DRIVER") && <Route path="/driver" element={<DriverPortal />} />}
-            {roles.includes("ADMIN") && <Route path="/admin" element={<AdminPortal />} />}
+            {canUseOperationsPortal && <Route path="/admin" element={<AdminPortal />} />}
             <Route path="*" element={<Navigate to={home} replace />} />
           </Routes>
         </Suspense>
