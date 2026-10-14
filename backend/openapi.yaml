@@ -1,355 +1,891 @@
 openapi: 3.1.0
 info:
   title: GoRide API
-  version: 1.2.0
-  description: API đặt xe, điều phối, thanh toán, ledger ví, đối soát và quản trị GoRide.
+  version: 1.3.0
+  description: Complete HTTP contract for the GoRide booking, dispatch, wallet, payment, reconciliation, and administration API.
+  license: { name: MIT, identifier: MIT }
 servers:
   - url: http://localhost:4000
-    description: Local
+    description: Local development
 tags:
-  - name: Auth
-  - name: Rides
-  - name: Drivers
-  - name: Wallets
-  - name: Payments
-  - name: Admin
+  - { name: Catalog, description: "Public service and vehicle catalog" }
+  - { name: Auth, description: "Registration, login, token rotation, and logout" }
+  - { name: Customers, description: "Customer profiles and saved addresses" }
+  - { name: Drivers, description: "Driver onboarding, availability, location, and ride workflow" }
+  - { name: Rides, description: "Ride estimates, bookings, history, invoices, cancellation, and rating" }
+  - { name: Maps, description: "Geocoding and reverse-geocoding facade" }
+  - { name: Wallets, description: "Customer and driver balances, top-ups, withdrawals, and ledger entries" }
+  - { name: Payments, description: "Ride payments, VietQR notifications, and refunds" }
+  - { name: Promotions, description: "Promotion validation" }
+  - { name: Pricing, description: "Pricing and surcharge configuration" }
+  - { name: Admin, description: "Role-controlled operations, finance, reconciliation, and review queues" }
+
 paths:
+  /api/vehicle-types:
+    get:
+      tags: [Catalog]
+      operationId: listVehicleTypes
+      summary: List active vehicle types
+      security: []
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
   /api/auth/register:
     post:
       tags: [Auth]
-      summary: Đăng ký khách hàng
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RegisterRequest'
+      operationId: registerCustomer
+      summary: Register a customer account
+      security: []
+      requestBody: { $ref: '#/components/requestBodies/Register' }
       responses:
-        '201': { $ref: '#/components/responses/Success' }
-        '409': { $ref: '#/components/responses/Error' }
+        '201': { $ref: '#/components/responses/Created' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/RateLimited' }
   /api/auth/login:
     post:
       tags: [Auth]
-      summary: Đăng nhập
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [phone, password]
-              properties:
-                phone: { type: string }
-                password: { type: string, format: password }
+      operationId: login
+      summary: Log in with phone and password
+      security: []
+      requestBody: { $ref: '#/components/requestBodies/Login' }
       responses:
         '200': { $ref: '#/components/responses/Success' }
-        '401': { $ref: '#/components/responses/Error' }
-  /api/rides/estimate:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/auth/send-otp:
     post:
-      tags: [Rides]
-      summary: Báo giá và lộ trình
-      security: [{ bearerAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/RideRequest' }
+      tags: [Auth]
+      operationId: sendOtp
+      summary: Request a login OTP
+      description: The current implementation returns 503 until an SMS provider is configured.
+      security: []
+      requestBody: { $ref: '#/components/requestBodies/SendOtp' }
       responses:
         '200': { $ref: '#/components/responses/Success' }
-        '422': { $ref: '#/components/responses/Error' }
-  /api/rides:
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/auth/verify-otp:
     post:
-      tags: [Rides]
-      summary: Đặt xe
-      security: [{ bearerAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              allOf:
-                - $ref: '#/components/schemas/RideRequest'
-                - type: object
-                  properties:
-                    paymentMethod: { type: string, enum: [CASH, WALLET, VIETQR], default: CASH }
+      tags: [Auth]
+      operationId: verifyOtp
+      summary: Verify a login OTP
+      description: The current implementation returns 503 until an SMS provider is configured.
+      security: []
+      requestBody: { $ref: '#/components/requestBodies/VerifyOtp' }
       responses:
-        '201': { $ref: '#/components/responses/Success' }
-        '409': { $ref: '#/components/responses/Error' }
+        '200': { $ref: '#/components/responses/Success' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/auth/refresh-token:
+    post:
+      tags: [Auth]
+      operationId: refreshAccessToken
+      summary: Rotate a refresh token and issue a new access token
+      security: []
+      requestBody: { $ref: '#/components/requestBodies/RefreshToken' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Revoke the authenticated session
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/customers/me:
     get:
-      tags: [Rides]
-      summary: Lịch sử chuyến theo vai trò
+      tags: [Customers]
+      operationId: getCustomerProfile
+      summary: Get the current customer profile
+      description: Roles CUSTOMER or ADMIN.
       security: [{ bearerAuth: [] }]
-      parameters:
-        - in: query
-          name: as
-          schema: { type: string, enum: [customer, driver] }
       responses:
         '200': { $ref: '#/components/responses/Success' }
-  /api/rides/current:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Customers]
+      operationId: updateCustomerProfile
+      summary: Update the current customer profile
+      description: Roles CUSTOMER or ADMIN.
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/CustomerUpdate' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/customers/me/addresses:
     get:
-      tags: [Rides]
-      summary: Chuyến hiện tại; khách hàng nhận thêm startPin
+      tags: [Customers]
+      operationId: listCustomerAddresses
+      summary: List saved addresses
+      description: Roles CUSTOMER or ADMIN.
       security: [{ bearerAuth: [] }]
-      parameters:
-        - in: query
-          name: as
-          schema: { type: string, enum: [customer, driver] }
       responses:
         '200': { $ref: '#/components/responses/Success' }
-  /api/rides/{id}/cancel:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
     post:
-      tags: [Rides]
-      summary: Khách hủy chuyến; có thể phát sinh phí sau khi tài xế nhận
+      tags: [Customers]
+      operationId: createCustomerAddress
+      summary: Add a saved address
+      description: Roles CUSTOMER or ADMIN.
       security: [{ bearerAuth: [] }]
-      parameters: [{ $ref: '#/components/parameters/RideId' }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [reason]
-              properties: { reason: { type: string } }
+      requestBody: { $ref: '#/components/requestBodies/AddressCreate' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/customers/me/addresses/{id}:
+    delete:
+      tags: [Customers]
+      operationId: deleteCustomerAddress
+      summary: Delete a saved address
+      description: Roles CUSTOMER or ADMIN; ownership is enforced.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/EntityId' }]
       responses:
         '200': { $ref: '#/components/responses/Success' }
-  /api/rides/{id}/invoice:
-    get:
-      tags: [Rides]
-      summary: Lấy hóa đơn chuyến hoàn thành
-      security: [{ bearerAuth: [] }]
-      parameters: [{ $ref: '#/components/parameters/RideId' }]
-      responses:
-        '200': { $ref: '#/components/responses/Success' }
-        '404': { $ref: '#/components/responses/Error' }
-  /api/drivers/rides/{id}/accept:
-    post:
-      tags: [Drivers]
-      summary: Nhận chuyến được mời
-      security: [{ bearerAuth: [] }]
-      parameters: [{ $ref: '#/components/parameters/RideId' }]
-      responses:
-        '200': { $ref: '#/components/responses/Success' }
-  /api/drivers/rides/{id}/heading:
-    post:
-      tags: [Drivers]
-      summary: Bắt đầu di chuyển đến điểm đón
-      security: [{ bearerAuth: [] }]
-      parameters: [{ $ref: '#/components/parameters/RideId' }]
-      responses:
-        '200': { $ref: '#/components/responses/Success' }
-  /api/drivers/rides/{id}/arrived:
-    post:
-      tags: [Drivers]
-      summary: Đã đến điểm đón
-      security: [{ bearerAuth: [] }]
-      parameters: [{ $ref: '#/components/parameters/RideId' }]
-      responses:
-        '200': { $ref: '#/components/responses/Success' }
-  /api/drivers/rides/{id}/start:
-    post:
-      tags: [Drivers]
-      summary: Xác minh PIN và bắt đầu chuyến
-      security: [{ bearerAuth: [] }]
-      parameters: [{ $ref: '#/components/parameters/RideId' }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [pin]
-              properties: { pin: { type: string, pattern: '^\d{4}$' } }
-      responses:
-        '200': { $ref: '#/components/responses/Success' }
-        '422': { $ref: '#/components/responses/Error' }
-  /api/drivers/rides/{id}/complete:
-    post:
-      tags: [Drivers]
-      summary: Hoàn thành, tính giá thực tế và phát hành hóa đơn
-      security: [{ bearerAuth: [] }]
-      parameters: [{ $ref: '#/components/parameters/RideId' }]
-      responses:
-        '200': { $ref: '#/components/responses/Success' }
-  /api/drivers/rides/{id}/cancel:
-    post:
-      tags: [Drivers]
-      summary: Tài xế hủy; hệ thống trả cuốc về hàng matching
-      security: [{ bearerAuth: [] }]
-      parameters: [{ $ref: '#/components/parameters/RideId' }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [reason]
-              properties: { reason: { type: string } }
-      responses:
-        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /api/customers/me/wallet:
     get:
       tags: [Wallets]
-      summary: Ví 4 bucket và lịch sử ledger của khách hàng
-      description: Trả về availableBalance, heldBalance, pendingSettlement và platformReceivable.
+      operationId: getCustomerWallet
+      summary: Get customer balances and ledger history
+      description: Roles CUSTOMER or ADMIN. Balances include available, held, pending settlement, and platform receivable buckets.
       security: [{ bearerAuth: [] }]
       responses:
         '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /api/customers/me/wallet/top-ups:
     post:
       tags: [Wallets]
-      summary: Tạo mã VietQR nạp ví
+      operationId: createCustomerWalletTopUp
+      summary: Create a VietQR wallet top-up
+      description: Roles CUSTOMER or ADMIN.
       security: [{ bearerAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [amount]
-              properties: { amount: { type: integer, minimum: 10000 } }
+      requestBody: { $ref: '#/components/requestBodies/TopUpCreate' }
       responses:
-        '201': { $ref: '#/components/responses/Success' }
-  /api/drivers/me/withdrawals:
+        '201': { $ref: '#/components/responses/Created' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /api/drivers/register:
     post:
-      tags: [Wallets]
-      summary: Tạo yêu cầu rút tiền
+      tags: [Drivers]
+      operationId: registerDriverProfile
+      summary: Register a driver profile and initial vehicle
+      description: Any authenticated account may register; duplicate profiles are rejected.
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/DriverRegister' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/drivers/me:
+    get:
+      tags: [Drivers]
+      operationId: getDriverProfile
+      summary: Get the current driver profile
+      description: Roles DRIVER or ADMIN.
       security: [{ bearerAuth: [] }]
       responses:
-        '201': { $ref: '#/components/responses/Success' }
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Drivers]
+      operationId: updateDriverProfile
+      summary: Update driver identity details
+      description: Roles DRIVER or ADMIN.
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/DriverUpdate' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/drivers/me/online:
+    post:
+      tags: [Drivers]
+      operationId: setDriverOnline
+      summary: Set the current driver online
+      description: Roles DRIVER or ADMIN. Requires an approved profile, approved vehicle, and fresh GPS location.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/drivers/me/offline:
+    post:
+      tags: [Drivers]
+      operationId: setDriverOffline
+      summary: Set the current driver offline
+      description: Roles DRIVER or ADMIN; a busy driver cannot go offline.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/drivers/me/location:
+    post:
+      tags: [Drivers]
+      operationId: updateDriverLocation
+      summary: Update the current driver GPS location
+      description: Roles DRIVER or ADMIN.
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/LocationUpdate' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/drivers/me/ride-requests:
+    get:
+      tags: [Drivers]
+      operationId: listDriverRideRequests
+      summary: List active ride offers for the current driver
+      description: Roles DRIVER or ADMIN.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/drivers/me/earnings:
+    get:
+      tags: [Drivers]
+      operationId: getDriverEarnings
+      summary: Get current driver earnings summary
+      description: Roles DRIVER or ADMIN.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /api/drivers/me/wallet:
     get:
       tags: [Wallets]
-      summary: Ví 4 bucket, hoa hồng và bảng kê thu nhập tài xế
+      operationId: getDriverWallet
+      summary: Get driver wallet buckets and ledger history
+      description: Roles DRIVER or ADMIN.
       security: [{ bearerAuth: [] }]
       responses:
         '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/drivers/me/withdrawals:
+    post:
+      tags: [Wallets]
+      operationId: createDriverWithdrawal
+      summary: Create a driver withdrawal request
+      description: Roles DRIVER or ADMIN; the amount is held until review.
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/WithdrawalCreate' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/drivers/rides/{id}/accept:
+    post:
+      tags: [Drivers]
+      operationId: acceptRideOffer
+      summary: Accept an active ride offer
+      description: Roles DRIVER or ADMIN.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/drivers/rides/{id}/reject:
+    post:
+      tags: [Drivers]
+      operationId: rejectRideOffer
+      summary: Reject an active ride offer
+      description: Roles DRIVER or ADMIN.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/drivers/rides/{id}/heading:
+    post:
+      tags: [Drivers]
+      operationId: markDriverHeadingToPickup
+      summary: Mark the assigned driver as heading to pickup
+      description: Roles DRIVER or ADMIN.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/drivers/rides/{id}/arrived:
+    post:
+      tags: [Drivers]
+      operationId: markDriverArrived
+      summary: Mark the assigned driver as arrived
+      description: Roles DRIVER or ADMIN.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/drivers/rides/{id}/start:
+    post:
+      tags: [Drivers]
+      operationId: startRide
+      summary: Verify the customer PIN and start the ride
+      description: Roles DRIVER or ADMIN.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      requestBody: { $ref: '#/components/requestBodies/RideStart' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/drivers/rides/{id}/complete:
+    post:
+      tags: [Drivers]
+      operationId: completeRide
+      summary: Complete the ride, calculate actual fare, and issue the invoice
+      description: Roles DRIVER or ADMIN.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/drivers/rides/{id}/cancel:
+    post:
+      tags: [Drivers]
+      operationId: cancelRideByDriver
+      summary: Cancel the assignment and return the ride to matching
+      description: Roles DRIVER or ADMIN.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      requestBody: { $ref: '#/components/requestBodies/Cancel' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /api/rides/estimate:
+    post:
+      tags: [Rides]
+      operationId: estimateRide
+      summary: Estimate route, duration, and fare
+      description: Roles CUSTOMER or ADMIN.
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/RideEstimate' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/rides:
+    post:
+      tags: [Rides]
+      operationId: createRide
+      summary: Book an immediate or scheduled ride
+      description: Role CUSTOMER. VIETQR rides include payment.vietQr details in the response.
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/RideCreate' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    get:
+      tags: [Rides]
+      operationId: listRides
+      summary: List rides for the selected customer or driver context
+      description: A CUSTOMER or DRIVER role is required; ownership and the selected role context are enforced. An ADMIN-only account has no implicit list scope.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideContext' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/rides/current:
+    get:
+      tags: [Rides]
+      operationId: getCurrentRide
+      summary: Get the current ride for the selected role context
+      description: A CUSTOMER or DRIVER role is required. Customer responses expose startPin; VIETQR payment details survive reload.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideContext' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/rides/{id}/invoice:
+    get:
+      tags: [Rides]
+      operationId: getRideInvoice
+      summary: Get the invoice for a completed ride
+      description: Ride owners with CUSTOMER or DRIVER, plus ADMIN, OPERATOR, SUPPORT, or ACCOUNTANT roles, may access the invoice.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/rides/{id}:
+    get:
+      tags: [Rides]
+      operationId: getRide
+      summary: Get a ride by ID
+      description: Ride owners with CUSTOMER or DRIVER, plus ADMIN, OPERATOR, SUPPORT, or ACCOUNTANT roles, may access it. VIETQR payment details are included when applicable.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/rides/{id}/cancel:
+    post:
+      tags: [Rides]
+      operationId: cancelRideByCustomer
+      summary: Cancel a ride as its customer
+      description: Role CUSTOMER; cancellation fees and wallet releases are applied when applicable.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      requestBody: { $ref: '#/components/requestBodies/Cancel' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/rides/{id}/rating:
+    post:
+      tags: [Rides]
+      operationId: rateRide
+      summary: Rate a completed ride
+      description: Role CUSTOMER and ride ownership required.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      requestBody: { $ref: '#/components/requestBodies/RideRating' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /api/maps/search:
+    get:
+      tags: [Maps]
+      operationId: searchAddresses
+      summary: Search addresses, optionally biased by a coordinate
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: q, required: true, schema: { type: string, minLength: 3, maxLength: 160 } }
+        - { in: query, name: lat, schema: { type: number, minimum: -90, maximum: 90 } }
+        - { in: query, name: lng, schema: { type: number, minimum: -180, maximum: 180 } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /api/maps/reverse:
+    get:
+      tags: [Maps]
+      operationId: reverseGeocode
+      summary: Reverse geocode a coordinate
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: lat, required: true, schema: { type: number, minimum: -90, maximum: 90 } }
+        - { in: query, name: lng, required: true, schema: { type: number, minimum: -180, maximum: 180 } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
   /api/payments/vietqr/ipn:
     post:
       tags: [Payments]
-      summary: IPN VietQR, xác thực HMAC-SHA256 và phân loại đối soát
-      description: Chỉ giao dịch EXACT được ghi nhận tự động; sai lệch được lưu để admin xử lý.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/VietQrIpn' }
+      operationId: processVietQrIpn
+      summary: Process a VietQR payment notification
+      description: Public provider callback authenticated by the HMAC-SHA256 signature field. Only exact matches are posted automatically; discrepancies enter reconciliation.
+      security: []
+      requestBody: { $ref: '#/components/requestBodies/VietQrIpn' }
       responses:
         '200': { $ref: '#/components/responses/Success' }
-        '401': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/payments/rides/{id}:
+    get:
+      tags: [Payments]
+      operationId: getRidePayment
+      summary: Get payment details for a ride
+      description: Roles CUSTOMER or ADMIN. Customers are restricted to their own rides; ADMIN may inspect any ride payment. Pending VIETQR payments include vietQr details.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      responses:
+        '200': { $ref: '#/components/responses/PaymentSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /api/payments/rides/{id}/refunds:
     post:
       tags: [Payments]
-      summary: Tạo yêu cầu hoàn tiền cho khoản thanh toán chuyến đi
+      operationId: createRideRefundRequest
+      summary: Request a partial or full ride payment refund
+      description: Role CUSTOMER and ride ownership required.
       security: [{ bearerAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/RideId' }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/CreateRefundRequest' }
+      requestBody: { $ref: '#/components/requestBodies/RefundCreate' }
       responses:
-        '201': { $ref: '#/components/responses/Success' }
-        '409': { $ref: '#/components/responses/Error' }
-        '422': { $ref: '#/components/responses/Error' }
-  /api/admin/withdrawals/{id}/approve:
+        '201': { $ref: '#/components/responses/Created' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /api/promotions/validate:
     post:
-      tags: [Admin]
-      summary: Duyệt và trừ số dư rút tiền
+      tags: [Promotions]
+      operationId: validatePromotion
+      summary: Validate a promotion against a fare
       security: [{ bearerAuth: [] }]
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema: { type: string, format: uuid }
+      requestBody: { $ref: '#/components/requestBodies/PromotionValidate' }
       responses:
         '200': { $ref: '#/components/responses/Success' }
-  /api/admin/refunds:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /api/admin/pricing-rules:
+    get:
+      tags: [Pricing]
+      operationId: listPricingRules
+      summary: List pricing rules
+      description: Role ADMIN.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Pricing]
+      operationId: createPricingRule
+      summary: Create a pricing rule
+      description: Role ADMIN.
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/PricingRuleCreate' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/admin/pricing-rules/{id}:
+    patch:
+      tags: [Pricing]
+      operationId: updatePricingRule
+      summary: Update a pricing rule
+      description: Role ADMIN.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/EntityId' }]
+      requestBody: { $ref: '#/components/requestBodies/PricingRuleUpdate' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /api/admin/surcharges:
+    get:
+      tags: [Pricing]
+      operationId: listSurchargeRules
+      summary: List surcharge rules
+      description: Roles ADMIN or OPERATOR.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Pricing]
+      operationId: createSurchargeRule
+      summary: Create a surcharge rule
+      description: Role ADMIN.
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/SurchargeRuleCreate' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/admin/surcharges/context/weather:
+    get:
+      tags: [Pricing]
+      operationId: getWeatherPricingContext
+      summary: Get the current weather pricing context
+      description: Roles ADMIN or OPERATOR.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    patch:
+      tags: [Pricing]
+      operationId: updateWeatherPricingContext
+      summary: Update the weather pricing context
+      description: Roles ADMIN or OPERATOR.
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/WeatherUpdate' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/admin/surcharges/{id}:
+    patch:
+      tags: [Pricing]
+      operationId: updateSurchargeRule
+      summary: Update a surcharge rule
+      description: Role ADMIN.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/EntityId' }]
+      requestBody: { $ref: '#/components/requestBodies/SurchargeRuleUpdate' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /api/admin/dashboard:
     get:
       tags: [Admin]
-      summary: Danh sách yêu cầu hoàn tiền
+      operationId: getAdminDashboard
+      summary: Get operational and financial dashboard metrics
+      description: Roles ADMIN, OPERATOR, or ACCOUNTANT. Financials explicitly separate captured gross, completed refunds, and net revenue.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/DashboardSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/admin/users:
+    get:
+      tags: [Admin]
+      operationId: listAdminUsers
+      summary: List and search users
+      description: Roles ADMIN or SUPPORT.
       security: [{ bearerAuth: [] }]
       parameters:
-        - in: query
-          name: status
-          schema: { type: string, enum: [PENDING, APPROVED, REJECTED] }
-        - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/Limit'
+        - { $ref: '#/components/parameters/Search' }
+        - { $ref: '#/components/parameters/Status' }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
       responses:
         '200': { $ref: '#/components/responses/Success' }
-  /api/admin/refunds/{id}/approve:
-    post:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/admin/users/{id}/status:
+    patch:
       tags: [Admin]
-      summary: Duyệt hoàn tiền và ghi có vào ví khả dụng
+      operationId: updateAdminUserStatus
+      summary: Update a user account status
+      description: Role ADMIN.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/EntityId' }]
+      requestBody: { $ref: '#/components/requestBodies/UserStatusUpdate' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/admin/drivers:
+    get:
+      tags: [Admin]
+      operationId: listAdminDrivers
+      summary: List and search driver profiles
+      description: Roles ADMIN or OPERATOR.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Search' }
+        - { $ref: '#/components/parameters/Status' }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/admin/drivers/{id}:
+    get:
+      tags: [Admin]
+      operationId: getAdminDriver
+      summary: Get a driver profile with vehicles, documents, wallet, and location
+      description: Roles ADMIN or OPERATOR.
       security: [{ bearerAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/EntityId' }]
       responses:
         '200': { $ref: '#/components/responses/Success' }
-  /api/admin/refunds/{id}/reject:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/admin/drivers/{id}/approve:
     post:
       tags: [Admin]
-      summary: Từ chối yêu cầu hoàn tiền
+      operationId: approveDriver
+      summary: Approve a driver and pending vehicles
+      description: Role ADMIN.
       security: [{ bearerAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/EntityId' }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/RejectRequest' }
       responses:
         '200': { $ref: '#/components/responses/Success' }
-  /api/admin/reconciliation/run:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/admin/drivers/{id}/reject:
     post:
       tags: [Admin]
-      summary: Chạy đối soát provider ngay lập tức
-      security: [{ bearerAuth: [] }]
-      responses:
-        '200': { $ref: '#/components/responses/Success' }
-  /api/admin/reconciliation/runs:
-    get:
-      tags: [Admin]
-      summary: Lịch sử các lần chạy đối soát
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/Limit'
-      responses:
-        '200': { $ref: '#/components/responses/Success' }
-  /api/admin/reconciliation/items:
-    get:
-      tags: [Admin]
-      summary: Danh sách giao dịch và ngoại lệ đối soát
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - in: query
-          name: classification
-          schema: { $ref: '#/components/schemas/ReconciliationClassification' }
-        - in: query
-          name: status
-          schema: { type: string, enum: [MATCHED, REVIEW_REQUIRED, RESOLVED, IGNORED] }
-        - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/Limit'
-      responses:
-        '200': { $ref: '#/components/responses/Success' }
-  /api/admin/reconciliation/items/{id}/resolve:
-    post:
-      tags: [Admin]
-      summary: Chấp nhận hoặc bỏ qua ngoại lệ đối soát
-      description: REFERENCE_NOT_FOUND và DUPLICATE chỉ có thể được bỏ qua.
+      operationId: rejectDriver
+      summary: Reject a driver profile
+      description: Role ADMIN; busy drivers cannot be rejected.
       security: [{ bearerAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/EntityId' }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/ResolveReconciliationRequest' }
+      requestBody: { $ref: '#/components/requestBodies/Reject' }
       responses:
         '200': { $ref: '#/components/responses/Success' }
-        '422': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/admin/rides:
+    get:
+      tags: [Admin]
+      operationId: listAdminRides
+      summary: List and search rides
+      description: Roles ADMIN, OPERATOR, SUPPORT, or ACCOUNTANT.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Search' }
+        - { $ref: '#/components/parameters/Status' }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/admin/rides/{id}:
+    get:
+      tags: [Admin]
+      operationId: getAdminRide
+      summary: Get complete operational ride details
+      description: Roles ADMIN, OPERATOR, SUPPORT, or ACCOUNTANT.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/admin/rides/{id}/cancel:
+    post:
+      tags: [Admin]
+      operationId: cancelRideByAdmin
+      summary: Cancel an active or scheduled ride
+      description: Roles ADMIN or OPERATOR. Releases the assigned driver and applicable wallet hold, invalidates offers, and records an audit event.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      requestBody: { $ref: '#/components/requestBodies/Cancel' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/admin/payments:
+    get:
+      tags: [Admin]
+      operationId: listAdminPayments
+      summary: List payments
+      description: Roles ADMIN or ACCOUNTANT.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Search' }
+        - { $ref: '#/components/parameters/Status' }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/admin/reports/revenue:
+    get:
+      tags: [Admin]
+      operationId: getRevenueReport
+      summary: Get aggregate financial metrics
+      description: Roles ADMIN or ACCOUNTANT. The paid and per-method groups expose grossRevenue, refundedRevenue, and netRevenue.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/RevenueReportSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /api/admin/reports/finance.csv:
     get:
       tags: [Admin]
-      summary: Xuất báo cáo tài chính CSV theo ngày hoặc tháng
-      description: Doanh thu là tổng gross captured; refund được xuất thành chỉ tiêu riêng. Múi giờ báo cáo là Asia/Saigon.
+      operationId: downloadFinanceCsvReport
+      summary: Download a daily or monthly finance report
+      description: Roles ADMIN or ACCOUNTANT. Asia/Saigon reporting window. CSV metrics are GROSS_REVENUE, REFUNDED_REVENUE, NET_REVENUE, PLATFORM_COMMISSION, CASH_COLLECTION, WALLET_TOP_UP, and WITHDRAWAL.
       security: [{ bearerAuth: [] }]
       parameters:
         - in: query
@@ -359,35 +895,223 @@ paths:
         - in: query
           name: date
           required: true
-          description: YYYY-MM-DD cho day hoặc YYYY-MM cho month.
+          description: YYYY-MM-DD for day or YYYY-MM for month.
           schema: { type: string, pattern: '^\d{4}-\d{2}(?:-\d{2})?$' }
       responses:
         '200':
-          description: Tệp CSV UTF-8 có BOM
+          description: UTF-8 CSV file with BOM
+          headers:
+            Content-Disposition:
+              schema: { type: string }
           content:
             text/csv:
               schema: { type: string }
-  /api/admin/surcharges/context/weather:
-    patch:
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/admin/reconciliation/run:
+    post:
       tags: [Admin]
-      summary: Cập nhật điều kiện thời tiết tính phụ phí
+      operationId: runPaymentReconciliation
+      summary: Run payment reconciliation immediately
+      description: Roles ADMIN or ACCOUNTANT.
       security: [{ bearerAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                weatherCondition: { type: string, enum: [NORMAL, RAIN, HEAVY_RAIN, FLOOD] }
       responses:
         '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/admin/reconciliation/runs:
+    get:
+      tags: [Admin]
+      operationId: listPaymentReconciliationRuns
+      summary: List reconciliation runs
+      description: Roles ADMIN or ACCOUNTANT.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/admin/reconciliation/items:
+    get:
+      tags: [Admin]
+      operationId: listPaymentReconciliationItems
+      summary: List provider reconciliation items and exceptions
+      description: Roles ADMIN or ACCOUNTANT.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: classification
+          schema: { $ref: '#/components/schemas/ReconciliationClassification' }
+        - in: query
+          name: status
+          schema: { type: string, enum: [MATCHED, REVIEW_REQUIRED, RESOLVED, IGNORED] }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/admin/reconciliation/items/{id}/resolve:
+    post:
+      tags: [Admin]
+      operationId: resolvePaymentReconciliationItem
+      summary: Accept or ignore a reconciliation exception
+      description: Roles ADMIN or ACCOUNTANT. REFERENCE_NOT_FOUND and DUPLICATE exceptions can only be ignored.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/EntityId' }]
+      requestBody: { $ref: '#/components/requestBodies/ReconciliationResolve' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/admin/withdrawals:
+    get:
+      tags: [Admin]
+      operationId: listWithdrawalRequests
+      summary: List driver withdrawal requests
+      description: Roles ADMIN or ACCOUNTANT.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/ReviewStatus' }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/admin/withdrawals/{id}/approve:
+    post:
+      tags: [Admin]
+      operationId: approveWithdrawalRequest
+      summary: Approve a driver withdrawal request
+      description: Roles ADMIN or ACCOUNTANT.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/EntityId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/admin/withdrawals/{id}/reject:
+    post:
+      tags: [Admin]
+      operationId: rejectWithdrawalRequest
+      summary: Reject a driver withdrawal request and release the hold
+      description: Roles ADMIN or ACCOUNTANT.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/EntityId' }]
+      requestBody: { $ref: '#/components/requestBodies/Reject' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/admin/refunds:
+    get:
+      tags: [Admin]
+      operationId: listRefundRequests
+      summary: List ride refund requests
+      description: Roles ADMIN or ACCOUNTANT.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/ReviewStatus' }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/admin/refunds/{id}/approve:
+    post:
+      tags: [Admin]
+      operationId: approveRefundRequest
+      summary: Approve a refund and credit the customer wallet
+      description: Roles ADMIN or ACCOUNTANT.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/EntityId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/admin/refunds/{id}/reject:
+    post:
+      tags: [Admin]
+      operationId: rejectRefundRequest
+      summary: Reject a refund request
+      description: Roles ADMIN or ACCOUNTANT.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/EntityId' }]
+      requestBody: { $ref: '#/components/requestBodies/RejectRefund' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/admin/promotions:
+    get:
+      tags: [Admin]
+      operationId: listPromotions
+      summary: List promotions
+      description: Role ADMIN.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Admin]
+      operationId: createPromotion
+      summary: Create a promotion
+      description: Role ADMIN.
+      security: [{ bearerAuth: [] }]
+      requestBody: { $ref: '#/components/requestBodies/PromotionCreate' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/admin/promotions/{id}:
+    patch:
+      tags: [Admin]
+      operationId: updatePromotion
+      summary: Update a promotion
+      description: Role ADMIN.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/EntityId' }]
+      requestBody: { $ref: '#/components/requestBodies/PromotionUpdate' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+
   parameters:
     RideId:
       in: path
@@ -399,6 +1123,23 @@ components:
       name: id
       required: true
       schema: { type: string, format: uuid }
+    RideContext:
+      in: query
+      name: as
+      description: Select the customer or driver identity when the account has more than one role.
+      schema: { type: string, enum: [customer, driver] }
+    Search:
+      in: query
+      name: search
+      schema: { type: string }
+    Status:
+      in: query
+      name: status
+      schema: { type: string }
+    ReviewStatus:
+      in: query
+      name: status
+      schema: { type: string, enum: [PENDING, APPROVED, REJECTED] }
     Page:
       in: query
       name: page
@@ -407,15 +1148,142 @@ components:
       in: query
       name: limit
       schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+
   schemas:
-    Point:
+    ApiSuccess:
       type: object
-      required: [address, lat, lng]
+      required: [success, message, data]
       properties:
-        address: { type: string }
+        success: { type: boolean, const: true }
+        message: { type: string }
+        data: {}
+    ApiError:
+      type: object
+      required: [success, error]
+      properties:
+        success: { type: boolean, const: false }
+        error:
+          type: object
+          required: [message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: {}
+    RegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [phone, fullName, password]
+      properties:
+        phone: { type: string, minLength: 9, maxLength: 15 }
+        fullName: { type: string, minLength: 2, maxLength: 120 }
+        email: { type: string, format: email }
+        password: { type: string, format: password, minLength: 6, maxLength: 100 }
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [phone, password]
+      properties:
+        phone: { type: string, minLength: 9, maxLength: 15 }
+        password: { type: string, format: password, minLength: 6, maxLength: 100 }
+    SendOtpRequest:
+      type: object
+      additionalProperties: false
+      required: [phone]
+      properties:
+        phone: { type: string, minLength: 9, maxLength: 15 }
+    VerifyOtpRequest:
+      type: object
+      additionalProperties: false
+      required: [phone, otp]
+      properties:
+        phone: { type: string, minLength: 9, maxLength: 15 }
+        otp: { type: string, minLength: 6, maxLength: 6 }
+    RefreshTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string, minLength: 20 }
+    CustomerUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        fullName: { type: string, minLength: 2, maxLength: 120 }
+        email:
+          oneOf: [{ type: string, format: email }, { type: 'null' }]
+        avatarUrl:
+          oneOf: [{ type: string, format: uri }, { type: 'null' }]
+    AddressCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [label, address, lat, lng]
+      properties:
+        label: { type: string, minLength: 1, maxLength: 80 }
+        address: { type: string, minLength: 5, maxLength: 255 }
         lat: { type: number, minimum: -90, maximum: 90 }
         lng: { type: number, minimum: -180, maximum: 180 }
-    RideRequest:
+    DriverRegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [licenseNumber, identityNumber, vehicle]
+      properties:
+        licenseNumber: { type: string, minLength: 4, maxLength: 40 }
+        identityNumber: { type: string, minLength: 6, maxLength: 30 }
+        vehicle:
+          type: object
+          additionalProperties: false
+          required: [vehicleTypeId, plateNumber]
+          properties:
+            vehicleTypeId: { type: string, format: uuid }
+            plateNumber: { type: string, minLength: 5, maxLength: 20 }
+            brand: { type: string, maxLength: 80 }
+            model: { type: string, maxLength: 80 }
+            color: { type: string, maxLength: 40 }
+    DriverUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        licenseNumber: { type: string, minLength: 4, maxLength: 40 }
+        identityNumber: { type: string, minLength: 6, maxLength: 30 }
+    LocationUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [lat, lng]
+      properties:
+        lat: { type: number, minimum: -90, maximum: 90 }
+        lng: { type: number, minimum: -180, maximum: 180 }
+        heading: { type: number, minimum: 0, maximum: 360 }
+        speed: { type: number, minimum: 0 }
+    TopUpCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [amount]
+      properties:
+        amount: { type: integer, minimum: 10000, maximum: 100000000 }
+    WithdrawalCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [amount, bankCode, accountNumber, accountName]
+      properties:
+        amount: { type: integer, minimum: 50000, maximum: 100000000 }
+        bankCode: { type: string, minLength: 2, maxLength: 30 }
+        accountNumber: { type: string, pattern: '^\d{6,30}$' }
+        accountName: { type: string, minLength: 2, maxLength: 150 }
+    Point:
+      type: object
+      additionalProperties: false
+      required: [address, lat, lng]
+      properties:
+        address: { type: string, minLength: 5 }
+        lat: { type: number, minimum: -90, maximum: 90 }
+        lng: { type: number, minimum: -180, maximum: 180 }
+    Stop:
+      allOf:
+        - { $ref: '#/components/schemas/Point' }
+        - type: object
+          properties:
+            dwellMinutes: { type: integer, minimum: 1, maximum: 30, default: 5 }
+    RideEstimateRequest:
       type: object
       required: [pickup, dropoff, vehicleTypeId]
       properties:
@@ -424,70 +1292,448 @@ components:
         stops:
           type: array
           maxItems: 2
-          items: { $ref: '#/components/schemas/Point' }
+          default: []
+          items: { $ref: '#/components/schemas/Stop' }
         vehicleTypeId: { type: string, format: uuid }
-        promotionCode: { type: string }
+        promotionCode: { type: string, minLength: 1 }
         scheduledAt: { type: string, format: date-time }
-    RegisterRequest:
+    RideCreateRequest:
+      allOf:
+        - { $ref: '#/components/schemas/RideEstimateRequest' }
+        - type: object
+          properties:
+            paymentMethod: { type: string, enum: [CASH, CARD, WALLET, VIETQR], default: CASH }
+    CancelRequest:
       type: object
-      required: [phone, fullName, password]
+      additionalProperties: false
+      required: [reason]
       properties:
-        phone: { type: string }
-        fullName: { type: string }
-        email: { type: string, format: email }
-        password: { type: string, format: password }
-    VietQrIpn:
+        reason: { type: string, minLength: 3, maxLength: 255 }
+    RideStartRequest:
       type: object
+      additionalProperties: false
+      required: [pin]
+      properties:
+        pin: { type: string, pattern: '^\d{4}$' }
+    RideRatingRequest:
+      type: object
+      additionalProperties: false
+      required: [score]
+      properties:
+        score: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string, maxLength: 500 }
+    VietQrIpnRequest:
+      type: object
+      additionalProperties: false
       required: [transactionId, reference, amount, paidAt, signature]
       properties:
-        transactionId: { type: string }
-        reference: { type: string }
+        transactionId: { type: string, minLength: 1, maxLength: 191 }
+        reference: { type: string, minLength: 1, maxLength: 50 }
         amount: { type: integer, minimum: 1 }
         paidAt: { type: string, format: date-time }
         signature: { type: string, pattern: '^[a-fA-F0-9]{64}$' }
-    CreateRefundRequest:
+    RefundCreateRequest:
       type: object
+      additionalProperties: false
       required: [amount, reason]
       properties:
         amount: { type: integer, minimum: 1 }
         reason: { type: string, minLength: 3, maxLength: 191 }
+    PromotionValidateRequest:
+      type: object
+      additionalProperties: false
+      required: [code, fare]
+      properties:
+        code: { type: string, minLength: 1 }
+        fare: { type: number, minimum: 0 }
+    PromotionFields:
+      type: object
+      additionalProperties: false
+      properties:
+        code: { type: string, minLength: 2, maxLength: 40 }
+        name: { type: string, minLength: 2, maxLength: 120 }
+        type: { type: string, enum: [PERCENTAGE, FIXED_AMOUNT] }
+        value: { type: number, minimum: 0 }
+        maxDiscount:
+          oneOf: [{ type: number, minimum: 0 }, { type: 'null' }]
+        minRideFare:
+          oneOf: [{ type: number, minimum: 0 }, { type: 'null' }]
+        usageLimit:
+          oneOf: [{ type: integer, minimum: 1 }, { type: 'null' }]
+        perUserLimit:
+          oneOf: [{ type: integer, minimum: 1 }, { type: 'null' }]
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        isActive: { type: boolean }
+    PromotionCreateRequest:
+      allOf:
+        - { $ref: '#/components/schemas/PromotionFields' }
+        - type: object
+          required: [code, name, type, value, startsAt, endsAt]
+    PricingRuleFields:
+      type: object
+      additionalProperties: false
+      properties:
+        vehicleTypeId: { type: string, format: uuid }
+        baseFare: { type: number, minimum: 0 }
+        perKmFare: { type: number, minimum: 0 }
+        perMinuteFare: { type: number, minimum: 0 }
+        minimumFare: { type: number, minimum: 0 }
+        waitingFeePerMinute: { type: number, minimum: 0 }
+        peakMultiplier: { type: number, minimum: 1 }
+        activeFrom: { type: string, format: date-time }
+        activeTo:
+          oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+        isActive: { type: boolean }
+    PricingRuleCreateRequest:
+      allOf:
+        - { $ref: '#/components/schemas/PricingRuleFields' }
+        - type: object
+          required: [vehicleTypeId, baseFare, perKmFare, perMinuteFare, minimumFare]
+    SurchargeRuleFields:
+      type: object
+      additionalProperties: false
+      properties:
+        vehicleTypeId:
+          oneOf: [{ type: string, format: uuid }, { type: 'null' }]
+        name: { type: string, minLength: 2, maxLength: 100 }
+        type: { type: string, enum: [PEAK_HOUR, LATE_NIGHT, WEATHER, CUSTOM] }
+        multiplier: { type: number, minimum: 1, maximum: 5, default: 1 }
+        fixedAmount: { type: integer, minimum: 0, maximum: 10000000, default: 0 }
+        startMinute:
+          oneOf: [{ type: integer, minimum: 0, maximum: 1439 }, { type: 'null' }]
+        endMinute:
+          oneOf: [{ type: integer, minimum: 0, maximum: 1439 }, { type: 'null' }]
+        daysOfWeek:
+          type: array
+          maxItems: 7
+          items: { type: integer, minimum: 0, maximum: 6 }
+        weatherConditions:
+          type: array
+          maxItems: 3
+          items: { type: string, enum: [RAIN, HEAVY_RAIN, FLOOD] }
+        activeFrom: { type: string, format: date-time }
+        activeTo:
+          oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+        isActive: { type: boolean }
+    SurchargeRuleCreateRequest:
+      allOf:
+        - { $ref: '#/components/schemas/SurchargeRuleFields' }
+        - type: object
+          required: [name, type]
+    WeatherUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [weatherCondition]
+      properties:
+        weatherCondition: { type: string, enum: [NORMAL, RAIN, HEAVY_RAIN, FLOOD] }
+    UserStatusUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, enum: [ACTIVE, LOCKED, DELETED] }
     RejectRequest:
       type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 3, maxLength: 255 }
+    RejectRefundRequest:
+      type: object
+      additionalProperties: false
       required: [reason]
       properties:
         reason: { type: string, minLength: 3, maxLength: 191 }
     ReconciliationClassification:
       type: string
       enum: [EXACT, UNDERPAID, OVERPAID, REFERENCE_NOT_FOUND, DUPLICATE, EXPIRED]
-    ResolveReconciliationRequest:
+    ReconciliationResolveRequest:
       type: object
+      additionalProperties: false
       required: [action, note]
       properties:
         action: { type: string, enum: [ACCEPT, IGNORE] }
         note: { type: string, minLength: 3, maxLength: 191 }
-    ApiError:
+    VietQrDetails:
       type: object
+      required: [provider, reference, amount, bankBin, accountNumber, accountName, qrUrl, expiresAt]
       properties:
-        success: { type: boolean, const: false }
-        error:
-          type: object
+        provider: { type: string, const: VIETQR }
+        reference: { type: string }
+        bankBin: { type: string }
+        accountNumber: { type: string }
+        accountName: { type: string }
+        amount: { type: number, minimum: 0 }
+        qrUrl: { type: string, format: uri }
+        expiresAt: { type: string, format: date-time }
+    DecimalMoney:
+      type: string
+      pattern: '^-?\d+(?:\.\d+)?$'
+      description: Decimal database amount serialized as a JSON string.
+    Payment:
+      type: object
+      required: [id, rideId, customerId, method, status, amount, authorizedAmount, capturedAmount, refundedAmount, createdAt, updatedAt, vietQr]
+      properties:
+        id: { type: string, format: uuid }
+        rideId: { type: string, format: uuid }
+        customerId: { type: string, format: uuid }
+        method: { type: string, enum: [CASH, CARD, WALLET, VIETQR] }
+        status: { type: string, enum: [PENDING, AUTHORIZED, PARTIALLY_PAID, PAID, FAILED, VOIDED, REFUND_PENDING, REFUNDED] }
+        amount: { $ref: '#/components/schemas/DecimalMoney' }
+        authorizedAmount: { $ref: '#/components/schemas/DecimalMoney' }
+        capturedAmount: { $ref: '#/components/schemas/DecimalMoney' }
+        refundedAmount: { $ref: '#/components/schemas/DecimalMoney' }
+        provider:
+          oneOf: [{ type: string }, { type: 'null' }]
+        providerTransactionId:
+          oneOf: [{ type: string }, { type: 'null' }]
+        paymentReference:
+          oneOf: [{ type: string }, { type: 'null' }]
+        expiresAt:
+          oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+        paidAt:
+          oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        vietQr:
+          oneOf:
+            - { $ref: '#/components/schemas/VietQrDetails' }
+            - { type: 'null' }
+    PaymentSuccess:
+      type: object
+      required: [success, message, data]
+      properties:
+        success: { type: boolean, const: true }
+        message: { type: string }
+        data: { $ref: '#/components/schemas/Payment' }
+    FinancialTotals:
+      type: object
+      required: [grossRevenue, refundedRevenue, netRevenue]
+      properties:
+        grossRevenue:
+          type: number
+          description: Total payment captured amount.
+        refundedRevenue:
+          type: number
+          minimum: 0
+          description: Total completed refund amount.
+        netRevenue:
+          type: number
+          description: grossRevenue minus refundedRevenue; may be negative for a reporting period.
+    DailyFinancial:
+      allOf:
+        - { $ref: '#/components/schemas/FinancialTotals' }
+        - type: object
+          required: [day]
           properties:
-            code: { type: string }
-            message: { type: string }
-            details: {}
+            day: { type: string, format: date }
+    RideStatusCount:
+      type: object
+      required: [status, count]
+      properties:
+        status: { type: string }
+        count: { type: integer, minimum: 0 }
+    Dashboard:
+      allOf:
+        - { $ref: '#/components/schemas/FinancialTotals' }
+        - type: object
+          required: [dailyFinancials, statusCounts, totalUsers, totalDrivers, onlineDrivers, activeRides, completedRides, cancelledRides, paidTransactions]
+          properties:
+            dailyFinancials:
+              type: array
+              minItems: 7
+              maxItems: 7
+              items: { $ref: '#/components/schemas/DailyFinancial' }
+            statusCounts:
+              type: array
+              items: { $ref: '#/components/schemas/RideStatusCount' }
+            totalUsers: { type: integer, minimum: 0 }
+            totalDrivers: { type: integer, minimum: 0 }
+            onlineDrivers: { type: integer, minimum: 0 }
+            activeRides: { type: integer, minimum: 0 }
+            completedRides: { type: integer, minimum: 0 }
+            cancelledRides: { type: integer, minimum: 0 }
+            paidTransactions: { type: integer, minimum: 0 }
+    DashboardSuccess:
+      type: object
+      required: [success, message, data]
+      properties:
+        success: { type: boolean, const: true }
+        message: { type: string }
+        data: { $ref: '#/components/schemas/Dashboard' }
+    RevenueGroup:
+      allOf:
+        - { $ref: '#/components/schemas/FinancialTotals' }
+        - type: object
+          required: [count]
+          properties:
+            count: { type: integer, minimum: 0 }
+    RevenueMethodGroup:
+      allOf:
+        - { $ref: '#/components/schemas/RevenueGroup' }
+        - type: object
+          required: [method]
+          properties:
+            method: { type: string, enum: [CASH, CARD, WALLET, VIETQR] }
+    RevenueReport:
+      type: object
+      required: [paid, pending, platformCommission, driverGrossEarnings, byMethod]
+      properties:
+        paid: { $ref: '#/components/schemas/RevenueGroup' }
+        pending:
+          type: object
+          required: [count, amount]
+          properties:
+            count: { type: integer, minimum: 0 }
+            amount: { type: number, minimum: 0 }
+        platformCommission:
+          type: object
+          required: [count, amount]
+          properties:
+            count: { type: integer, minimum: 0 }
+            amount: { type: number, minimum: 0 }
+        driverGrossEarnings: { type: number }
+        byMethod:
+          type: array
+          items: { $ref: '#/components/schemas/RevenueMethodGroup' }
+    RevenueReportSuccess:
+      type: object
+      required: [success, message, data]
+      properties:
+        success: { type: boolean, const: true }
+        message: { type: string }
+        data: { $ref: '#/components/schemas/RevenueReport' }
+
+  requestBodies:
+    Register:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/RegisterRequest' } } }
+    Login:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/LoginRequest' } } }
+    SendOtp:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/SendOtpRequest' } } }
+    VerifyOtp:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/VerifyOtpRequest' } } }
+    RefreshToken:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/RefreshTokenRequest' } } }
+    CustomerUpdate:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/CustomerUpdateRequest' } } }
+    AddressCreate:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/AddressCreateRequest' } } }
+    DriverRegister:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/DriverRegisterRequest' } } }
+    DriverUpdate:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/DriverUpdateRequest' } } }
+    LocationUpdate:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/LocationUpdateRequest' } } }
+    TopUpCreate:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/TopUpCreateRequest' } } }
+    WithdrawalCreate:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/WithdrawalCreateRequest' } } }
+    RideEstimate:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/RideEstimateRequest' } } }
+    RideCreate:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/RideCreateRequest' } } }
+    Cancel:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/CancelRequest' } } }
+    RideStart:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/RideStartRequest' } } }
+    RideRating:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/RideRatingRequest' } } }
+    VietQrIpn:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/VietQrIpnRequest' } } }
+    RefundCreate:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/RefundCreateRequest' } } }
+    PromotionValidate:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/PromotionValidateRequest' } } }
+    PricingRuleCreate:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/PricingRuleCreateRequest' } } }
+    PricingRuleUpdate:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/PricingRuleFields' } } }
+    SurchargeRuleCreate:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/SurchargeRuleCreateRequest' } } }
+    SurchargeRuleUpdate:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/SurchargeRuleFields' } } }
+    WeatherUpdate:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/WeatherUpdateRequest' } } }
+    UserStatusUpdate:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/UserStatusUpdateRequest' } } }
+    Reject:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/RejectRequest' } } }
+    RejectRefund:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/RejectRefundRequest' } } }
+    ReconciliationResolve:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/ReconciliationResolveRequest' } } }
+    PromotionCreate:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/PromotionCreateRequest' } } }
+    PromotionUpdate:
+      required: true
+      content: { application/json: { schema: { $ref: '#/components/schemas/PromotionFields' } } }
+
   responses:
     Success:
-      description: Thành công
-      content:
-        application/json:
-          schema:
-            type: object
-            properties:
-              success: { type: boolean, const: true }
-              message: { type: string }
-              data: {}
-    Error:
-      description: Lỗi nghiệp vụ
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/ApiError' }
+      description: Successful request
+      content: { application/json: { schema: { $ref: '#/components/schemas/ApiSuccess' } } }
+    Created:
+      description: Resource created
+      content: { application/json: { schema: { $ref: '#/components/schemas/ApiSuccess' } } }
+    PaymentSuccess:
+      description: Ride payment details
+      content: { application/json: { schema: { $ref: '#/components/schemas/PaymentSuccess' } } }
+    DashboardSuccess:
+      description: Dashboard metrics
+      content: { application/json: { schema: { $ref: '#/components/schemas/DashboardSuccess' } } }
+    RevenueReportSuccess:
+      description: Revenue report
+      content: { application/json: { schema: { $ref: '#/components/schemas/RevenueReportSuccess' } } }
+    Unauthorized:
+      description: Missing, expired, or invalid authentication
+      content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } }
+    Forbidden:
+      description: Authenticated user lacks the required role or resource access
+      content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } }
+    NotFound:
+      description: Resource not found
+      content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } }
+    Conflict:
+      description: Business-state conflict
+      content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } }
+    Unprocessable:
+      description: Request validation or business-rule failure
+      content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } }
+    RateLimited:
+      description: Request rate limit exceeded
+      content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } }
+    ServiceUnavailable:
+      description: Required integration is unavailable or not configured
+      content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } }
