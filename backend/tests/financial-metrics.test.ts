@@ -1,9 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { describe, expect, it } from "vitest";
-import {
-  aggregateFinancialTotals,
-  financialTotals
-} from "../src/modules/admin/financial-metrics";
+import { aggregateFinancialTotals, financialTotals } from "../src/modules/admin/financial-metrics";
 
 describe("financial reporting totals", () => {
   it("reports captured revenue as both gross and net when there are no refunds", () => {

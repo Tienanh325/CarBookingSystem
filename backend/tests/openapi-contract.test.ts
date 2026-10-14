@@ -121,9 +121,9 @@ describe("OpenAPI contract", () => {
     const operations = documentedOperations(openApiDocument);
     const operationIds = [...operations.values()].map((operation) => operation.operationId);
 
-    expect(operationIds.every((operationId) => typeof operationId === "string" && operationId.length > 0)).toBe(
-      true
-    );
+    expect(
+      operationIds.every((operationId) => typeof operationId === "string" && operationId.length > 0)
+    ).toBe(true);
     expect(new Set(operationIds).size).toBe(operationIds.length);
     for (const [key, operation] of operations) {
       expect(operation.summary).toEqual(expect.any(String));

@@ -6,9 +6,7 @@ import * as reconciliation from "./reconciliation.service";
 import { requestRideRefund } from "../wallets/wallet.service";
 
 export const getRidePayment = asyncHandler(async (req: Request, res: Response) => {
-  res.json(
-    ok(await service.getRidePayment(req.auth!.userId, req.params.id as string, req.auth!.roles))
-  );
+  res.json(ok(await service.getRidePayment(req.auth!.userId, req.params.id as string, req.auth!.roles)));
 });
 
 export const vietQrWebhook = asyncHandler(async (req: Request, res: Response) => {

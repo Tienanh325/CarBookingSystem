@@ -12,10 +12,7 @@ export function matchingRadiusForWait(waitedSeconds: number) {
   return waitedSeconds < 30 ? RADII_KM[0] : waitedSeconds < 60 ? RADII_KM[1] : RADII_KM[2];
 }
 
-export function driverLocationCutoff(
-  now = new Date(),
-  maxAgeSeconds = env.driverLocationMaxAgeSeconds
-) {
+export function driverLocationCutoff(now = new Date(), maxAgeSeconds = env.driverLocationMaxAgeSeconds) {
   return new Date(now.getTime() - maxAgeSeconds * 1_000);
 }
 

@@ -157,7 +157,7 @@ export async function createRide(customerId: string, input: Input) {
   await notifyRide(ride.id, status === "SCHEDULED" ? "ride.scheduled" : "ride.request.created");
   return decorateRidePayment({
     ...ride,
-    startPin: rideStartPin(ride.id),
+    startPin: rideStartPin(ride.id)
   });
 }
 export async function estimateRideForCustomer(customerId: string, input: Omit<Input, "paymentMethod">) {

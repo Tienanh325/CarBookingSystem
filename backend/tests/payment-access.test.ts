@@ -30,9 +30,7 @@ describe("ride payment access", () => {
 
     const result = await getRidePayment("admin-1", rideId, ["ADMIN"]);
 
-    expect(prisma.payment.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { rideId } })
-    );
+    expect(prisma.payment.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { rideId } }));
     expect(result).toMatchObject({
       id: "payment-1",
       vietQr: { provider: "VIETQR", reference: "RIDE123", amount: 125_000 }
