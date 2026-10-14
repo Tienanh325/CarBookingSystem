@@ -1,6 +1,7 @@
 import { prisma } from "../../config/prisma";
 import { ApiError } from "../../utils/api-error";
 import { writeFinancialAudit } from "../wallets/finance-audit";
+import { financialTotals, type MoneyValue } from "./financial-metrics";
 
 export function reportWindow(period: "day" | "month", date: string) {
   const key = period === "day" ? date : date.slice(0, 7);
@@ -34,6 +35,20 @@ export function reportWindow(period: "day" | "month", date: string) {
 function csvCell(value: string | number) {
   const text = String(value);
   return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+export function revenueCsvRows(input: {
+  capturedAmount: MoneyValue;
+  capturedCount: number;
+  refundedAmount: MoneyValue;
+  refundedCount: number;
+}) {
+  const totals = financialTotals(input.capturedAmount, input.refundedAmount);
+  return [
+    ["GROSS_REVENUE", totals.grossRevenue, input.capturedCount],
+    ["REFUNDED_REVENUE", totals.refundedRevenue, input.refundedCount],
+    ["NET_REVENUE", totals.netRevenue, input.capturedCount]
+  ] as const;
 }
 
 export async function financeCsvReport(actorId: string, query: { period: "day" | "month"; date: string }) {
@@ -72,11 +87,15 @@ export async function financeCsvReport(actorId: string, query: { period: "day" |
     })
   ]);
   const rows = [
-    ["TOTAL_REVENUE", Number(revenue._sum.capturedAmount ?? 0), revenue._count],
+    ...revenueCsvRows({
+      capturedAmount: revenue._sum.capturedAmount,
+      capturedCount: revenue._count,
+      refundedAmount: refunds._sum.amount,
+      refundedCount: refunds._count
+    }),
     ["PLATFORM_COMMISSION", Math.abs(Number(commission._sum.amount ?? 0)), commission._count],
     ["CASH_COLLECTION", Number(cash._sum.capturedAmount ?? 0), cash._count],
     ["WALLET_TOP_UP", Number(topUps._sum.amount ?? 0), topUps._count],
-    ["REFUND", Number(refunds._sum.amount ?? 0), refunds._count],
     ["WITHDRAWAL", Number(withdrawals._sum.amount ?? 0), withdrawals._count]
   ] as const;
   await prisma.$transaction(async (tx) => {

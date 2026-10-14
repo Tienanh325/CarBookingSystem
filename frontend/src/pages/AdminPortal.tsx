@@ -19,7 +19,7 @@ import {
   UsersRound,
   Wallet
 } from "lucide-react";
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Feedback, Modal, RideDetails } from "../components/LiveUI";
 import { StatusBadge } from "../components/StatusBadge";
 import { apiRequest, downloadFile, mutate } from "../services/api";
@@ -199,11 +199,18 @@ export function AdminPortal() {
 }
 function Overview({ openRides }: { openRides: () => void }) {
   const resource = useResource<{
-    revenue: number;
+    grossRevenue: number;
+    refundedRevenue: number;
+    netRevenue: number;
     completedRides: number;
     activeRides: number;
     onlineDrivers: number;
-    dailyRevenue: { day: string; revenue: number }[];
+    dailyFinancials: {
+      day: string;
+      grossRevenue: number;
+      refundedRevenue: number;
+      netRevenue: number;
+    }[];
     statusCounts: { status: string; count: number }[];
   }>("/admin/dashboard");
   const d = resource.data;
@@ -218,7 +225,9 @@ function Overview({ openRides }: { openRides: () => void }) {
         <>
           <section className="metric-grid">
             {[
-              ["Doanh thu đã thu", money(d.revenue)],
+              ["Doanh thu gộp", money(d.grossRevenue)],
+              ["Đã hoàn tiền", money(d.refundedRevenue)],
+              ["Doanh thu thuần", money(d.netRevenue)],
               ["Chuyến hoàn thành", d.completedRides],
               ["Chuyến hoạt động", d.activeRides],
               ["Tài xế online", d.onlineDrivers]
@@ -232,16 +241,19 @@ function Overview({ openRides }: { openRides: () => void }) {
           <section className="admin-dashboard-grid">
             <div className="data-panel">
               <div className="data-panel-heading">
-                <h2>Doanh thu 7 ngày (UTC)</h2>
+                <h2>Tài chính 7 ngày (UTC)</h2>
               </div>
               <div className="chart-wrap">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={d.dailyRevenue}>
+                  <LineChart data={d.dailyFinancials}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="day" tickFormatter={(s) => s.slice(5)} />
                     <YAxis width={65} />
                     <Tooltip formatter={(value) => money(Number(value))} />
-                    <Line dataKey="revenue" stroke="#087a55" strokeWidth={2} />
+                    <Legend />
+                    <Line name="Doanh thu gộp" dataKey="grossRevenue" stroke="#087a55" strokeWidth={2} />
+                    <Line name="Hoàn tiền" dataKey="refundedRevenue" stroke="#c2410c" strokeWidth={2} />
+                    <Line name="Doanh thu thuần" dataKey="netRevenue" stroke="#1d4ed8" strokeWidth={2} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>

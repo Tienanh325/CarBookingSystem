@@ -510,7 +510,15 @@ async function main() {
   );
   assert.equal(reportResponse.status, 200);
   const reportCsv = await reportResponse.text();
-  for (const metric of ["TOTAL_REVENUE", "PLATFORM_COMMISSION", "CASH_COLLECTION", "WALLET_TOP_UP", "REFUND", "WITHDRAWAL"]) {
+  for (const metric of [
+    "GROSS_REVENUE",
+    "REFUNDED_REVENUE",
+    "NET_REVENUE",
+    "PLATFORM_COMMISSION",
+    "CASH_COLLECTION",
+    "WALLET_TOP_UP",
+    "WITHDRAWAL"
+  ]) {
     assert.ok(reportCsv.includes(metric));
   }
   const auditCount = await prisma.auditLog.count({

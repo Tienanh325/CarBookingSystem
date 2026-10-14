@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { reportWindow } from "../src/modules/admin/finance-report.service";
+import { reportWindow, revenueCsvRows } from "../src/modules/admin/finance-report.service";
 
 describe("finance report window", () => {
   it("uses exact Asia/Saigon day boundaries", () => {
@@ -23,5 +23,32 @@ describe("finance report window", () => {
     expect(() => reportWindow("day", "2026-02-31")).toThrow("Ngay bao cao khong hop le");
     expect(() => reportWindow("day", "2026-10")).toThrow("Ngay bao cao khong hop le");
     expect(() => reportWindow("month", "2026-13")).toThrow("Ngay bao cao khong hop le");
+  });
+});
+
+describe("finance report revenue rows", () => {
+  it("uses explicit gross, refund and net metrics without a legacy total alias", () => {
+    expect(
+      revenueCsvRows({
+        capturedAmount: "250000",
+        capturedCount: 4,
+        refundedAmount: "50000",
+        refundedCount: 1
+      })
+    ).toEqual([
+      ["GROSS_REVENUE", 250000, 4],
+      ["REFUNDED_REVENUE", 50000, 1],
+      ["NET_REVENUE", 200000, 4]
+    ]);
+  });
+
+  it("reports zero and negative net periods without hiding refund activity", () => {
+    expect(
+      revenueCsvRows({ capturedAmount: 0, capturedCount: 0, refundedAmount: 100000, refundedCount: 2 })
+    ).toEqual([
+      ["GROSS_REVENUE", 0, 0],
+      ["REFUNDED_REVENUE", 100000, 2],
+      ["NET_REVENUE", -100000, 0]
+    ]);
   });
 });

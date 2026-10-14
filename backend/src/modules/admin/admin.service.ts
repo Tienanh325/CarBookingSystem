@@ -9,6 +9,7 @@ import { prisma } from "../../config/prisma";
 import { ApiError } from "../../utils/api-error";
 import { notifyRide } from "../../realtime/socket";
 import { refundCustomerWalletRide } from "../wallets/wallet.service";
+import { aggregateFinancialTotals, financialTotals } from "./financial-metrics";
 
 type ListQuery = {
   search?: string;
@@ -63,7 +64,7 @@ export async function dashboard() {
       }),
       prisma.payment.aggregate({
         where: { status: { in: recognizedStatuses } },
-        _sum: { capturedAmount: true },
+        _sum: { capturedAmount: true, refundedAmount: true },
         _count: true
       })
     ]);
@@ -71,22 +72,35 @@ export async function dashboard() {
   const since = new Date();
   since.setUTCHours(0, 0, 0, 0);
   since.setUTCDate(since.getUTCDate() - 6);
-  const recent = await prisma.payment.findMany({
-    where: { status: { in: recognizedStatuses }, paidAt: { gte: since } },
-    select: { capturedAmount: true, paidAt: true }
-  });
-  const dailyRevenue = Array.from({ length: 7 }, (_, i) => {
+  const [recentPayments, recentRefunds] = await Promise.all([
+    prisma.payment.findMany({
+      where: { status: { in: recognizedStatuses }, paidAt: { gte: since } },
+      select: { capturedAmount: true, paidAt: true }
+    }),
+    prisma.customerWalletTransaction.findMany({
+      where: { type: "REFUND", status: "COMPLETED", createdAt: { gte: since } },
+      select: { amount: true, createdAt: true }
+    })
+  ]);
+  const dailyFinancials = Array.from({ length: 7 }, (_, i) => {
     const day = new Date(since.getTime() + i * 86400000).toISOString().slice(0, 10);
+    const totals = aggregateFinancialTotals([
+      ...recentPayments
+        .filter((payment) => payment.paidAt?.toISOString().startsWith(day))
+        .map((payment) => ({ capturedAmount: payment.capturedAmount })),
+      ...recentRefunds
+        .filter((refund) => refund.createdAt.toISOString().startsWith(day))
+        .map((refund) => ({ refundedAmount: refund.amount }))
+    ]);
     return {
       day,
-      revenue: recent
-        .filter((p) => p.paidAt?.toISOString().startsWith(day))
-        .reduce((sum, p) => sum + Number(p.capturedAmount), 0)
+      ...totals
     };
   });
   const statusCounts = await prisma.ride.groupBy({ by: ["status"], _count: true });
+  const totals = financialTotals(paidPayments._sum.capturedAmount, paidPayments._sum.refundedAmount);
   return {
-    dailyRevenue,
+    dailyFinancials,
     statusCounts: statusCounts.map((item) => ({ status: item.status, count: item._count })),
     totalUsers,
     totalDrivers,
@@ -95,7 +109,7 @@ export async function dashboard() {
     completedRides,
     cancelledRides,
     paidTransactions: paidPayments._count,
-    revenue: Number(paidPayments._sum.capturedAmount ?? 0)
+    ...totals
   };
 }
 
@@ -424,7 +438,7 @@ export async function revenueReport() {
   const [paid, pending, byMethod, commissions, driverEarnings] = await Promise.all([
     prisma.payment.aggregate({
       where: { status: { in: recognizedStatuses } },
-      _sum: { capturedAmount: true },
+      _sum: { capturedAmount: true, refundedAmount: true },
       _count: true
     }),
     prisma.payment.aggregate({
@@ -435,7 +449,7 @@ export async function revenueReport() {
     prisma.payment.groupBy({
       by: ["method"],
       where: { status: { in: recognizedStatuses } },
-      _sum: { capturedAmount: true },
+      _sum: { capturedAmount: true, refundedAmount: true },
       _count: true
     }),
     prisma.walletTransaction.aggregate({
@@ -452,7 +466,7 @@ export async function revenueReport() {
   return {
     paid: {
       count: paid._count,
-      amount: Number(paid._sum.capturedAmount ?? 0)
+      ...financialTotals(paid._sum.capturedAmount, paid._sum.refundedAmount)
     },
     pending: {
       count: pending._count,
@@ -466,7 +480,7 @@ export async function revenueReport() {
     byMethod: byMethod.map((item) => ({
       method: item.method,
       count: item._count,
-      amount: Number(item._sum.capturedAmount ?? 0)
+      ...financialTotals(item._sum.capturedAmount, item._sum.refundedAmount)
     }))
   };
 }
