@@ -12,6 +12,34 @@ export function matchingRadiusForWait(waitedSeconds: number) {
   return waitedSeconds < 30 ? RADII_KM[0] : waitedSeconds < 60 ? RADII_KM[1] : RADII_KM[2];
 }
 
+export function driverLocationCutoff(
+  now = new Date(),
+  maxAgeSeconds = env.driverLocationMaxAgeSeconds
+) {
+  return new Date(now.getTime() - maxAgeSeconds * 1_000);
+}
+
+export function matchingCandidateWhere(
+  vehicleTypeId: string,
+  rideId: string,
+  now = new Date(),
+  maxLocationAgeSeconds = env.driverLocationMaxAgeSeconds
+): Prisma.DriverProfileWhereInput {
+  return {
+    verificationStatus: "APPROVED",
+    onlineStatus: "ONLINE",
+    location: {
+      is: {
+        updatedAt: { gte: driverLocationCutoff(now, maxLocationAgeSeconds) }
+      }
+    },
+    vehicles: {
+      some: { vehicleTypeId, isActive: true, registrationStatus: "APPROVED" }
+    },
+    offers: { none: { rideId } }
+  };
+}
+
 export async function activateScheduledRides() {
   const threshold = new Date(Date.now() + env.matchingLeadMinutes * 60_000);
   const scheduled = await prisma.ride.findMany({
@@ -65,15 +93,7 @@ export async function dispatchRide(rideId: string) {
   if (ride.offers.some((offer) => offer.status === "PENDING" && offer.expiresAt > new Date())) return;
 
   const candidates = await prisma.driverProfile.findMany({
-    where: {
-      verificationStatus: "APPROVED",
-      onlineStatus: "ONLINE",
-      location: { isNot: null },
-      vehicles: {
-        some: { vehicleTypeId: ride.vehicleTypeId, isActive: true, registrationStatus: "APPROVED" }
-      },
-      offers: { none: { rideId } }
-    },
+    where: matchingCandidateWhere(ride.vehicleTypeId, rideId),
     include: { location: true, user: { select: { id: true } } }
   });
 

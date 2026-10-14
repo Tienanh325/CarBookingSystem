@@ -34,6 +34,7 @@ export const env = {
   matchingOfferSeconds: readNumber("MATCHING_OFFER_SECONDS", 20),
   matchingLeadMinutes: readNumber("SCHEDULE_MATCH_LEAD_MINUTES", 30),
   matchingMaxWaitSeconds: readNumber("MATCHING_MAX_WAIT_SECONDS", 180),
+  driverLocationMaxAgeSeconds: readNumber("DRIVER_LOCATION_MAX_AGE_SECONDS", 120),
   waitingGraceMinutes: readNumber("WAITING_GRACE_MINUTES", 5),
   cancelFeeAfterAccept: readNumber("CANCEL_FEE_AFTER_ACCEPT", 10_000),
   cancelFeeAfterArrived: readNumber("CANCEL_FEE_AFTER_ARRIVED", 20_000),
@@ -55,6 +56,10 @@ export const isProduction = env.nodeEnv === "production";
 
 if (env.platformCommissionRate < 0 || env.platformCommissionRate >= 1) {
   throw new Error("PLATFORM_COMMISSION_RATE must be between 0 and 1");
+}
+
+if (env.driverLocationMaxAgeSeconds <= 0) {
+  throw new Error("DRIVER_LOCATION_MAX_AGE_SECONDS must be greater than 0");
 }
 
 if (isProduction) {
