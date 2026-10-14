@@ -18,13 +18,15 @@ const sections: AdminSection[] = [
   "withdrawals",
   "refunds",
   "reconciliation",
-  "reports"
+  "reports",
+  "safety",
+  "support"
 ];
 
 const expectedSections: Record<string, AdminSection[]> = {
   ADMIN: sections,
-  OPERATOR: ["overview", "rides", "drivers", "surcharges"],
-  SUPPORT: ["rides", "users"],
+  OPERATOR: ["overview", "rides", "drivers", "surcharges", "safety"],
+  SUPPORT: ["rides", "users", "safety", "support"],
   ACCOUNTANT: ["overview", "rides", "payments", "withdrawals", "refunds", "reconciliation", "reports"]
 };
 

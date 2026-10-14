@@ -13,6 +13,8 @@ import { mapRouter } from "../modules/maps/map.routes";
 import { paymentRouter } from "../modules/payments/payment.routes";
 import { surchargeRouter } from "../modules/pricing/surcharge.routes";
 import { notificationRouter } from "../modules/notifications/notification.routes";
+import { safetyRouter } from "../modules/safety/safety.routes";
+import { supportRouter } from "../modules/support/support.routes";
 
 export const apiRouter = Router();
 apiRouter.get(
@@ -35,3 +37,5 @@ apiRouter.use("/admin/pricing-rules", pricingRouter);
 apiRouter.use("/admin/surcharges", surchargeRouter);
 apiRouter.use("/promotions", promotionRouter);
 apiRouter.use("/notifications", notificationRouter);
+apiRouter.use("/safety", safetyRouter);
+apiRouter.use("/support", supportRouter);

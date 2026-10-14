@@ -32,6 +32,13 @@ import {
   reconciliationRunListSchema,
   resolveReconciliationSchema
 } from "../payments/payment.schemas";
+import * as supportController from "../support/support.controller";
+import {
+  ticketListSchema,
+  ticketMessageSchema,
+  ticketParamSchema,
+  updateTicketSchema
+} from "../support/support.schemas";
 
 export const adminRouter = Router();
 
@@ -69,6 +76,31 @@ adminRouter.post(
   authorize(ROLES.ADMIN),
   validate({ params: idParamSchema }),
   controller.approveDriver
+);
+
+adminRouter.get(
+  "/support/tickets",
+  authorize(ROLES.ADMIN, ROLES.SUPPORT),
+  validate({ query: ticketListSchema }),
+  supportController.listAll
+);
+adminRouter.get(
+  "/support/tickets/:id",
+  authorize(ROLES.ADMIN, ROLES.SUPPORT),
+  validate({ params: ticketParamSchema }),
+  supportController.detail
+);
+adminRouter.patch(
+  "/support/tickets/:id",
+  authorize(ROLES.ADMIN, ROLES.SUPPORT),
+  validate({ params: ticketParamSchema, body: updateTicketSchema }),
+  supportController.update
+);
+adminRouter.post(
+  "/support/tickets/:id/messages",
+  authorize(ROLES.ADMIN, ROLES.SUPPORT),
+  validate({ params: ticketParamSchema, body: ticketMessageSchema }),
+  supportController.message
 );
 adminRouter.post(
   "/drivers/:id/reject",

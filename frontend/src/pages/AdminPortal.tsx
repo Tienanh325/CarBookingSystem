@@ -9,12 +9,14 @@ import {
   Download,
   Eye,
   LayoutDashboard,
+  LifeBuoy,
   Pencil,
   Plus,
   RefreshCw,
   RotateCcw,
   Route,
   Search,
+  ShieldAlert,
   Tags,
   UsersRound,
   Wallet
@@ -54,7 +56,9 @@ const menus = [
   { id: "withdrawals", name: "Rút tiền", icon: Banknote },
   { id: "refunds", name: "Hoàn tiền", icon: RotateCcw },
   { id: "reconciliation", name: "Đối soát", icon: RefreshCw },
-  { id: "reports", name: "Báo cáo CSV", icon: Download }
+  { id: "reports", name: "Báo cáo CSV", icon: Download },
+  { id: "safety", name: "SOS an toàn", icon: ShieldAlert },
+  { id: "support", name: "Hỗ trợ", icon: LifeBuoy }
 ] as const;
 const noRoles: readonly string[] = [];
 
@@ -183,6 +187,10 @@ export function AdminPortal() {
             <ReconciliationView />
           ) : activeSection === "reports" ? (
             <FinanceReportView />
+          ) : activeSection === "safety" ? (
+            <SafetyQueue />
+          ) : activeSection === "support" ? (
+            <SupportQueue />
           ) : (
             <RecordsView
               key={activeSection}
@@ -195,6 +203,160 @@ export function AdminPortal() {
         </div>
       </main>
     </div>
+  );
+}
+
+type SosItem = {
+  id: string;
+  status: string;
+  message?: string;
+  lat?: string;
+  lng?: string;
+  createdAt: string;
+  user: { fullName: string };
+};
+
+function SafetyQueue() {
+  const resource = useResource<{ items: SosItem[] }>("/safety/sos?limit=100");
+  const [error, setError] = useState("");
+  async function update(id: string, status: "ACKNOWLEDGED" | "RESOLVED") {
+    try {
+      await mutate(`/safety/sos/${id}`, { status }, "PATCH");
+      await resource.reload();
+    } catch (caught) {
+      setError((caught as Error).message);
+    }
+  }
+  return (
+    <section className="data-panel">
+      <Feedback error={error || resource.error} loading={resource.loading} />
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Người gửi</th>
+              <th>Thời gian</th>
+              <th>Nội dung</th>
+              <th>Vị trí</th>
+              <th>Trạng thái</th>
+              <th>Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {resource.data?.items.map((item) => (
+              <tr key={item.id}>
+                <td>{item.user.fullName}</td>
+                <td>{date(item.createdAt)}</td>
+                <td>{item.message ?? "SOS"}</td>
+                <td>
+                  {item.lat && item.lng ? (
+                    <a
+                      href={`https://www.google.com/maps?q=${item.lat},${item.lng}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Bản đồ
+                    </a>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+                <td>
+                  <Badge status={item.status} />
+                </td>
+                <td>
+                  {item.status === "ACTIVE" && (
+                    <button className="text-button" onClick={() => void update(item.id, "ACKNOWLEDGED")}>
+                      Tiếp nhận
+                    </button>
+                  )}
+                  {item.status !== "RESOLVED" && (
+                    <button className="text-button" onClick={() => void update(item.id, "RESOLVED")}>
+                      Hoàn tất
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+type SupportItem = {
+  id: string;
+  ticketNo: string;
+  subject: string;
+  status: string;
+  priority: string;
+  updatedAt: string;
+  customer?: { fullName: string } | null;
+  driver?: { user: { fullName: string } } | null;
+};
+
+function SupportQueue() {
+  const resource = useResource<{ items: SupportItem[] }>("/admin/support/tickets?limit=100");
+  const [error, setError] = useState("");
+  async function update(id: string, status: "IN_PROGRESS" | "RESOLVED" | "CLOSED") {
+    try {
+      await mutate(`/admin/support/tickets/${id}`, { status }, "PATCH");
+      await resource.reload();
+    } catch (caught) {
+      setError((caught as Error).message);
+    }
+  }
+  return (
+    <section className="data-panel">
+      <Feedback error={error || resource.error} loading={resource.loading} />
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Mã</th>
+              <th>Người gửi</th>
+              <th>Chủ đề</th>
+              <th>Ưu tiên</th>
+              <th>Trạng thái</th>
+              <th>Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {resource.data?.items.map((item) => (
+              <tr key={item.id}>
+                <td>{item.ticketNo}</td>
+                <td>{item.customer?.fullName ?? item.driver?.user.fullName ?? "—"}</td>
+                <td>{item.subject}</td>
+                <td>
+                  <Badge status={item.priority} />
+                </td>
+                <td>
+                  <Badge status={item.status} />
+                </td>
+                <td>
+                  {item.status === "OPEN" && (
+                    <button className="text-button" onClick={() => void update(item.id, "IN_PROGRESS")}>
+                      Tiếp nhận
+                    </button>
+                  )}
+                  {!["RESOLVED", "CLOSED"].includes(item.status) && (
+                    <button className="text-button" onClick={() => void update(item.id, "RESOLVED")}>
+                      Giải quyết
+                    </button>
+                  )}
+                  {item.status === "RESOLVED" && (
+                    <button className="text-button" onClick={() => void update(item.id, "CLOSED")}>
+                      Đóng
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 function Overview({ openRides }: { openRides: () => void }) {

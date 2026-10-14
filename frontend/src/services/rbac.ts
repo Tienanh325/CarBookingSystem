@@ -10,7 +10,9 @@ export type AdminSection =
   | "withdrawals"
   | "refunds"
   | "reconciliation"
-  | "reports";
+  | "reports"
+  | "safety"
+  | "support";
 
 export type AdminAction = "cancelRide" | "manageDrivers" | "manageUsers" | "manageSurchargeRules";
 
@@ -28,7 +30,9 @@ const sectionRoles: Record<AdminSection, readonly string[]> = {
   withdrawals: ["ADMIN", "ACCOUNTANT"],
   refunds: ["ADMIN", "ACCOUNTANT"],
   reconciliation: ["ADMIN", "ACCOUNTANT"],
-  reports: ["ADMIN", "ACCOUNTANT"]
+  reports: ["ADMIN", "ACCOUNTANT"],
+  safety: ["ADMIN", "OPERATOR", "SUPPORT"],
+  support: ["ADMIN", "SUPPORT"]
 };
 
 const actionRoles: Record<AdminAction, readonly string[]> = {

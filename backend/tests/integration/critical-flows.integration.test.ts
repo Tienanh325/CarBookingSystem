@@ -161,6 +161,18 @@ async function cleanupFixtures() {
       }
     });
     await tx.refundRequest.deleteMany({ where: { rideId: { in: tracked.rideIds } } });
+    const tickets = await tx.supportTicket.findMany({
+      where: {
+        OR: [{ customerId: { in: tracked.userIds } }, { driverId: driverProfileId || "missing" }]
+      },
+      select: { id: true }
+    });
+    await tx.ticketMessage.deleteMany({ where: { ticketId: { in: tickets.map((ticket) => ticket.id) } } });
+    await tx.supportTicket.deleteMany({ where: { id: { in: tickets.map((ticket) => ticket.id) } } });
+    await tx.sosAlert.deleteMany({ where: { userId: { in: tracked.userIds } } });
+    await tx.emergencyContact.deleteMany({ where: { userId: { in: tracked.userIds } } });
+    await tx.rideMessage.deleteMany({ where: { rideId: { in: tracked.rideIds } } });
+    await tx.rideShareLink.deleteMany({ where: { rideId: { in: tracked.rideIds } } });
     await tx.withdrawalRequest.deleteMany({ where: { driverId: driverProfileId || "missing" } });
     await tx.customerWalletTransaction.deleteMany({
       where: {
@@ -716,6 +728,96 @@ integrationDescribe("critical API and financial flows", () => {
       .set(auth(actors.CUSTOMER));
     expect(marked.status).toBe(200);
     expect(marked.body.data.readAt).toBeTruthy();
+  });
+
+  it("protects emergency contacts, SOS, ride sharing, masked contact and ride chat", async () => {
+    const contact = await request(app)
+      .post("/api/safety/emergency-contacts")
+      .set(auth(actors.CUSTOMER))
+      .send({ name: "Integration emergency", relationship: "Family", phone: "0901234567", isPrimary: true });
+    expect(contact.status, JSON.stringify(contact.body)).toBe(201);
+    expect(
+      (
+        await request(app)
+          .delete(`/api/safety/emergency-contacts/${contact.body.data.id}`)
+          .set(auth(secondCustomer))
+      ).status
+    ).toBe(404);
+
+    const shared = await request(app)
+      .post(`/api/safety/rides/${stateRideId}/share`)
+      .set(auth(actors.CUSTOMER))
+      .send({ expiresInHours: 2 });
+    expect(shared.status, JSON.stringify(shared.body)).toBe(201);
+    const publicView = await request(app).get(`/api/safety/share/${shared.body.data.token}`);
+    expect(publicView.status).toBe(200);
+    expect(JSON.stringify(publicView.body)).not.toContain(actors.CUSTOMER.phone);
+    expect(JSON.stringify(publicView.body)).not.toContain(actors.DRIVER.phone);
+
+    const masked = await request(app)
+      .get(`/api/safety/rides/${stateRideId}/contact`)
+      .set(auth(actors.CUSTOMER));
+    expect(masked.status).toBe(200);
+    expect(masked.body.data.maskedNumber).toMatch(/^1900\d{7}$/);
+    expect(JSON.stringify(masked.body)).not.toContain(actors.DRIVER.phone);
+
+    const sent = await request(app)
+      .post(`/api/safety/rides/${stateRideId}/messages`)
+      .set(auth(actors.CUSTOMER))
+      .send({ body: "Integration ride chat" });
+    expect(sent.status).toBe(201);
+    expect(
+      (await request(app).get(`/api/safety/rides/${stateRideId}/messages`).set(auth(actors.DRIVER))).status
+    ).toBe(200);
+    expect(
+      (await request(app).get(`/api/safety/rides/${stateRideId}/messages`).set(auth(secondCustomer))).status
+    ).toBe(403);
+
+    const sos = await request(app)
+      .post("/api/safety/sos")
+      .set(auth(actors.CUSTOMER))
+      .send({ rideId: stateRideId, lat: 10.77, lng: 106.7, message: "Integration SOS" });
+    expect(sos.status).toBe(201);
+    expect((await request(app).get("/api/safety/sos").set(auth(actors.ACCOUNTANT))).status).toBe(403);
+    expect((await request(app).get("/api/safety/sos").set(auth(actors.SUPPORT))).status).toBe(200);
+    const resolved = await request(app)
+      .patch(`/api/safety/sos/${sos.body.data.id}`)
+      .set(auth(actors.SUPPORT))
+      .send({ status: "RESOLVED" });
+    expect(resolved.status).toBe(200);
+    expect(resolved.body.data.status).toBe("RESOLVED");
+  });
+
+  it("enforces support-ticket ownership and staff workflow", async () => {
+    const created = await request(app).post("/api/support/tickets").set(auth(actors.CUSTOMER)).send({
+      rideId: stateRideId,
+      subject: "Integration support ticket",
+      description: "Need help with integration ride",
+      priority: "HIGH"
+    });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const ticketId = created.body.data.id as string;
+    expect(
+      (await request(app).get(`/api/support/tickets/${ticketId}`).set(auth(secondCustomer))).status
+    ).toBe(403);
+    expect((await request(app).get("/api/admin/support/tickets").set(auth(actors.OPERATOR))).status).toBe(
+      403
+    );
+    expect((await request(app).get("/api/admin/support/tickets").set(auth(actors.SUPPORT))).status).toBe(200);
+    const updated = await request(app)
+      .patch(`/api/admin/support/tickets/${ticketId}`)
+      .set(auth(actors.SUPPORT))
+      .send({ status: "IN_PROGRESS", assignedToId: actors.SUPPORT.id });
+    expect(updated.status, JSON.stringify(updated.body)).toBe(200);
+    const reply = await request(app)
+      .post(`/api/admin/support/tickets/${ticketId}/messages`)
+      .set(auth(actors.SUPPORT))
+      .send({ body: "Integration staff reply" });
+    expect(reply.status).toBe(201);
+    const detail = await request(app).get(`/api/support/tickets/${ticketId}`).set(auth(actors.CUSTOMER));
+    expect(detail.body.data.messages).toEqual(
+      expect.arrayContaining([expect.objectContaining({ body: "Integration staff reply" })])
+    );
   });
 
   it("uses a single-use password reset token and revokes existing sessions", async () => {

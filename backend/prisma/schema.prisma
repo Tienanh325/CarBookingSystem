@@ -184,6 +184,12 @@ enum NotificationChannel {
   IN_APP
 }
 
+enum SosStatus {
+  ACTIVE
+  ACKNOWLEDGED
+  RESOLVED
+}
+
 model User {
   id           String     @id @default(uuid()) @db.Char(36)
   phone        String     @unique
@@ -215,6 +221,12 @@ model User {
   pushSubscriptions PushSubscription[]
   customerWallet    CustomerWallet?
   walletTopUps      WalletTopUp[]
+  emergencyContacts EmergencyContact[]
+  sosAlerts         SosAlert[]           @relation("SosCreatedBy")
+  resolvedSosAlerts SosAlert[]           @relation("SosResolvedBy")
+  rideShares        RideShareLink[]
+  rideMessages      RideMessage[]
+  ticketMessages    TicketMessage[]
 
   @@map("users")
 }
@@ -402,6 +414,9 @@ model Ride {
   payment            Payment?
   rating             Rating?
   supportTickets     SupportTicket[]
+  sosAlerts          SosAlert[]
+  shareLinks         RideShareLink[]
+  messages           RideMessage[]
   walletTransactions WalletTransaction[]
   promotionUsages    PromotionUsage[]
   rejections         RideRejection[]
@@ -854,13 +869,96 @@ model SupportTicket {
   createdAt    DateTime       @default(now()) @map("created_at")
   updatedAt    DateTime       @updatedAt @map("updated_at")
 
-  ride       Ride?          @relation(fields: [rideId], references: [id])
-  customer   User?          @relation("CustomerTickets", fields: [customerId], references: [id])
-  driver     DriverProfile? @relation("DriverTickets", fields: [driverId], references: [id])
-  assignedTo User?          @relation("AssignedTickets", fields: [assignedToId], references: [id])
+  ride       Ride?           @relation(fields: [rideId], references: [id])
+  customer   User?           @relation("CustomerTickets", fields: [customerId], references: [id])
+  driver     DriverProfile?  @relation("DriverTickets", fields: [driverId], references: [id])
+  assignedTo User?           @relation("AssignedTickets", fields: [assignedToId], references: [id])
+  messages   TicketMessage[]
 
   @@index([status, priority])
   @@map("support_tickets")
+}
+
+model TicketMessage {
+  id        String   @id @default(uuid()) @db.Char(36)
+  ticketId  String   @map("ticket_id") @db.Char(36)
+  senderId  String   @map("sender_id") @db.Char(36)
+  body      String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  sender User          @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@map("ticket_messages")
+}
+
+model EmergencyContact {
+  id           String   @id @default(uuid()) @db.Char(36)
+  userId       String   @map("user_id") @db.Char(36)
+  name         String   @db.VarChar(120)
+  relationship String?  @db.VarChar(80)
+  phone        String   @db.VarChar(20)
+  isPrimary    Boolean  @default(false) @map("is_primary")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isPrimary])
+  @@map("emergency_contacts")
+}
+
+model SosAlert {
+  id           String    @id @default(uuid()) @db.Char(36)
+  userId       String    @map("user_id") @db.Char(36)
+  rideId       String?   @map("ride_id") @db.Char(36)
+  status       SosStatus @default(ACTIVE)
+  lat          Decimal?  @db.Decimal(10, 7)
+  lng          Decimal?  @db.Decimal(10, 7)
+  message      String?   @db.VarChar(500)
+  resolvedById String?   @map("resolved_by_id") @db.Char(36)
+  resolvedAt   DateTime? @map("resolved_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  user       User  @relation("SosCreatedBy", fields: [userId], references: [id], onDelete: Cascade)
+  ride       Ride? @relation(fields: [rideId], references: [id], onDelete: SetNull)
+  resolvedBy User? @relation("SosResolvedBy", fields: [resolvedById], references: [id])
+
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
+  @@map("sos_alerts")
+}
+
+model RideShareLink {
+  id          String    @id @default(uuid()) @db.Char(36)
+  rideId      String    @map("ride_id") @db.Char(36)
+  createdById String    @map("created_by_id") @db.Char(36)
+  tokenHash   String    @unique @map("token_hash") @db.Char(64)
+  expiresAt   DateTime  @map("expires_at")
+  revokedAt   DateTime? @map("revoked_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  ride      Ride @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  createdBy User @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([rideId, expiresAt])
+  @@map("ride_share_links")
+}
+
+model RideMessage {
+  id        String   @id @default(uuid()) @db.Char(36)
+  rideId    String   @map("ride_id") @db.Char(36)
+  senderId  String   @map("sender_id") @db.Char(36)
+  body      String   @db.VarChar(1000)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  ride   Ride @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  sender User @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([rideId, createdAt])
+  @@map("ride_messages")
 }
 
 model Notification {

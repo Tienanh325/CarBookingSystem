@@ -7,6 +7,8 @@ import { useLive } from "./services/live";
 import { mutate, saveSession } from "./services/api";
 import { canAccessOperationsPortal } from "./services/rbac";
 import { NotificationCenter } from "./components/NotificationCenter";
+import { SafetyCenter } from "./components/SafetyCenter";
+import { SharedRidePage } from "./pages/SharedRidePage";
 const CustomerPortal = lazy(() =>
   import("./pages/CustomerPortal").then((m) => ({ default: m.CustomerPortal }))
 );
@@ -15,6 +17,7 @@ const AdminPortal = lazy(() => import("./pages/AdminPortal").then((m) => ({ defa
 export default function App() {
   const { auth, connected } = useLive();
   const location = useLocation();
+  if (location.pathname.startsWith("/share/")) return <SharedRidePage />;
   if (!auth) return <Login />;
   const roles = auth.user.roles;
   const canUseOperationsPortal = canAccessOperationsPortal(roles);
@@ -56,6 +59,7 @@ export default function App() {
         </nav>
         <div className="global-actions">
           <NotificationCenter />
+          <SafetyCenter />
           <span
             className={`connection-state ${connected ? "connected" : "reconnecting"}`}
             title={connected ? "Cập nhật trực tiếp" : "Đang kết nối lại"}

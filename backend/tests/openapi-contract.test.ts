@@ -13,7 +13,8 @@ const PUBLIC_OPERATIONS = new Set([
   "POST /api/auth/send-otp",
   "POST /api/auth/verify-otp",
   "POST /api/auth/refresh-token",
-  "POST /api/payments/vietqr/ipn"
+  "POST /api/payments/vietqr/ipn",
+  "GET /api/safety/share/{token}"
 ]);
 
 type RouteSource = {
@@ -50,7 +51,9 @@ const ROUTE_SOURCES: RouteSource[] = [
     file: "src/modules/notifications/notification.routes.ts",
     prefix: "/api/notifications",
     router: "notificationRouter"
-  }
+  },
+  { file: "src/modules/safety/safety.routes.ts", prefix: "/api/safety", router: "safetyRouter" },
+  { file: "src/modules/support/support.routes.ts", prefix: "/api/support", router: "supportRouter" }
 ];
 
 function normalizeExpressPath(prefix: string, routePath: string) {
@@ -118,8 +121,8 @@ describe("OpenAPI contract", () => {
     const actual = mountedExpressOperations();
     const documented = new Set(documentedOperations(openApiDocument).keys());
 
-    expect(actual.size).toBe(87);
-    expect(documented.size).toBe(87);
+    expect(actual.size).toBe(106);
+    expect(documented.size).toBe(106);
     expect([...actual].filter((operation) => !documented.has(operation))).toEqual([]);
     expect([...documented].filter((operation) => !actual.has(operation))).toEqual([]);
   });

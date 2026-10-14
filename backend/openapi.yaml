@@ -11,6 +11,8 @@ tags:
   - { name: Catalog, description: "Public service and vehicle catalog" }
   - { name: Auth, description: "Registration, login, token rotation, and logout" }
   - { name: Notifications, description: "In-app inbox and Web Push subscriptions" }
+  - { name: Safety, description: "Emergency contacts, SOS, ride sharing, masked contact, and ride chat" }
+  - { name: Support, description: "Customer/driver support tickets and staff workflow" }
   - { name: Customers, description: "Customer profiles and saved addresses" }
   - { name: Drivers, description: "Driver onboarding, availability, location, and ride workflow" }
   - { name: Rides, description: "Ride estimates, bookings, history, invoices, cancellation, and rating" }
@@ -1197,6 +1199,229 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '422': { $ref: '#/components/responses/Unprocessable' }
 
+  /api/safety/share/{token}:
+    get:
+      tags: [Safety]
+      operationId: getPublicSharedRide
+      summary: View a minimal live ride snapshot through an expiring share token
+      description: Public response excludes all customer and driver phone numbers.
+      security: []
+      parameters: [{ in: path, name: token, required: true, schema: { type: string, minLength: 40 } }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/safety/emergency-contacts:
+    get:
+      tags: [Safety]
+      operationId: listEmergencyContacts
+      summary: List the authenticated user's emergency contacts
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Safety]
+      operationId: createEmergencyContact
+      summary: Add an emergency contact
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/EmergencyContactRequest' } } } }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/safety/emergency-contacts/{id}:
+    delete:
+      tags: [Safety]
+      operationId: deleteEmergencyContact
+      summary: Delete an owned emergency contact
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/EntityId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/safety/sos:
+    post:
+      tags: [Safety]
+      operationId: createSosAlert
+      summary: Raise an SOS alert with optional ride and GPS context
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SosRequest' } } } }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    get:
+      tags: [Safety]
+      operationId: listSosAlerts
+      summary: List SOS incidents
+      description: Roles ADMIN, OPERATOR, or SUPPORT.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: status, schema: { type: string, enum: [ACTIVE, ACKNOWLEDGED, RESOLVED] } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/safety/sos/{id}:
+    patch:
+      tags: [Safety]
+      operationId: updateSosAlert
+      summary: Acknowledge or resolve an SOS incident
+      description: Roles ADMIN, OPERATOR, or SUPPORT.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/EntityId' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [status], properties: { status: { type: string, enum: [ACKNOWLEDGED, RESOLVED] } } } } } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/safety/rides/{id}/share:
+    post:
+      tags: [Safety]
+      operationId: createRideShareLink
+      summary: Create an expiring public ride-share token
+      description: Only ride participants may create links.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { expiresInHours: { type: integer, minimum: 1, maximum: 48, default: 8 } } } } } }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/safety/rides/{id}/messages:
+    get:
+      tags: [Safety]
+      operationId: listRideMessages
+      summary: List messages for an accessible ride
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Safety]
+      operationId: sendRideMessage
+      summary: Send a message to ride participants
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/MessageRequest' } } } }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/safety/rides/{id}/contact:
+    get:
+      tags: [Safety]
+      operationId: getMaskedRideContact
+      summary: Get a deterministic relay alias without exposing a real phone number
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RideId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/support/tickets:
+    get:
+      tags: [Support]
+      operationId: listOwnSupportTickets
+      summary: List tickets owned by the current customer or driver
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Page' }, { $ref: '#/components/parameters/Limit' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Support]
+      operationId: createSupportTicket
+      summary: Create a support ticket
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SupportTicketRequest' } } } }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/support/tickets/{id}:
+    get:
+      tags: [Support]
+      operationId: getOwnSupportTicket
+      summary: Get an owned support ticket and its messages
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/EntityId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/support/tickets/{id}/messages:
+    post:
+      tags: [Support]
+      operationId: replyOwnSupportTicket
+      summary: Add a message to an accessible support ticket
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/EntityId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/MessageRequest' } } } }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/admin/support/tickets:
+    get:
+      tags: [Support, Admin]
+      operationId: listAllSupportTickets
+      summary: List support queue tickets
+      description: Roles ADMIN or SUPPORT.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: status, schema: { type: string, enum: [OPEN, IN_PROGRESS, RESOLVED, CLOSED] } }
+        - { in: query, name: priority, schema: { type: string, enum: [LOW, MEDIUM, HIGH, URGENT] } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/admin/support/tickets/{id}:
+    get:
+      tags: [Support, Admin]
+      operationId: getAdminSupportTicket
+      summary: Get any support ticket
+      description: Roles ADMIN or SUPPORT.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/EntityId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Support, Admin]
+      operationId: updateAdminSupportTicket
+      summary: Assign, prioritize, resolve, or close a support ticket
+      description: Roles ADMIN or SUPPORT. Every update is audit logged.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/EntityId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SupportTicketUpdateRequest' } } } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/admin/support/tickets/{id}/messages:
+    post:
+      tags: [Support, Admin]
+      operationId: replyAdminSupportTicket
+      summary: Reply to a support ticket as staff
+      description: Roles ADMIN or SUPPORT.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/EntityId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/MessageRequest' } } } }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1309,6 +1534,46 @@ components:
       required: [endpoint]
       properties:
         endpoint: { type: string, format: uri, maxLength: 512 }
+    EmergencyContactRequest:
+      type: object
+      additionalProperties: false
+      required: [name, phone]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 120 }
+        relationship: { type: string, minLength: 2, maxLength: 80 }
+        phone: { type: string, minLength: 9, maxLength: 20 }
+        isPrimary: { type: boolean, default: false }
+    SosRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        rideId: { type: string, format: uuid }
+        lat: { type: number, minimum: -90, maximum: 90 }
+        lng: { type: number, minimum: -180, maximum: 180 }
+        message: { type: string, maxLength: 500 }
+    MessageRequest:
+      type: object
+      additionalProperties: false
+      required: [body]
+      properties:
+        body: { type: string, minLength: 1, maxLength: 5000 }
+    SupportTicketRequest:
+      type: object
+      additionalProperties: false
+      required: [subject, description]
+      properties:
+        rideId: { type: string, format: uuid }
+        subject: { type: string, minLength: 3, maxLength: 191 }
+        description: { type: string, minLength: 5, maxLength: 5000 }
+        priority: { type: string, enum: [LOW, MEDIUM, HIGH, URGENT], default: MEDIUM }
+    SupportTicketUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        status: { type: string, enum: [OPEN, IN_PROGRESS, RESOLVED, CLOSED] }
+        priority: { type: string, enum: [LOW, MEDIUM, HIGH, URGENT] }
+        assignedToId: { oneOf: [{ type: string, format: uuid }, { type: 'null' }] }
+        resolution: { oneOf: [{ type: string, maxLength: 5000 }, { type: 'null' }] }
     SendOtpRequest:
       type: object
       additionalProperties: false

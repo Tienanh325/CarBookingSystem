@@ -34,6 +34,7 @@ export const env = {
   webPushPublicKey: process.env.WEB_PUSH_PUBLIC_KEY,
   webPushPrivateKey: process.env.WEB_PUSH_PRIVATE_KEY,
   webPushSubject: process.env.WEB_PUSH_SUBJECT ?? "mailto:admin@goride.local",
+  phoneMaskingSecret: process.env.PHONE_MASKING_SECRET ?? "dev-phone-masking-secret-change-me",
   routingBaseUrl: process.env.ROUTING_BASE_URL ?? "https://router.project-osrm.org",
   mapboxAccessToken: process.env.MAPBOX_ACCESS_TOKEN,
   geocodingBaseUrl: process.env.GEOCODING_BASE_URL ?? "https://photon.komoot.io",
@@ -89,5 +90,8 @@ if (isProduction) {
   }
   if (env.rideStartPinSecret.length < 32 || env.rideStartPinSecret.includes("change-me")) {
     throw new Error("RIDE_START_PIN_SECRET must be a strong production secret");
+  }
+  if (env.phoneMaskingSecret.length < 32 || env.phoneMaskingSecret.includes("change-me")) {
+    throw new Error("PHONE_MASKING_SECRET must be a strong production secret");
   }
 }
