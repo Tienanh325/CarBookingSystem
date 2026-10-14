@@ -9,6 +9,7 @@ import { env } from "../../config/env";
 import { prisma } from "../../config/prisma";
 import { emitToUser, notifyRide } from "../../realtime/socket";
 import { ApiError } from "../../utils/api-error";
+import { ROLES, type RoleName } from "../../utils/roles";
 import { writeFinancialAudit } from "../wallets/finance-audit";
 
 export type ProviderTransactionInput = {
@@ -89,9 +90,10 @@ export function classifyProviderTransaction(input: {
   return "EXACT";
 }
 
-export async function getRidePayment(userId: string, rideId: string) {
+export async function getRidePayment(userId: string, rideId: string, roles: RoleName[]) {
+  const canViewAnyPayment = roles.includes(ROLES.ADMIN);
   const payment = await prisma.payment.findFirst({
-    where: { rideId, ride: { customerId: userId } },
+    where: canViewAnyPayment ? { rideId } : { rideId, ride: { customerId: userId } },
     include: {
       ride: { select: { id: true, status: true, paymentMethod: true } },
       refundRequests: { orderBy: { createdAt: "desc" } }
