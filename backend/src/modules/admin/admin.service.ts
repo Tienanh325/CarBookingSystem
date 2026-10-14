@@ -318,7 +318,8 @@ export async function cancelRide(id: string, reason: string, actorId: string) {
     RideStatus.COMPLETED,
     RideStatus.CANCELLED_BY_CUSTOMER,
     RideStatus.CANCELLED_BY_DRIVER,
-    RideStatus.CANCELLED_BY_SYSTEM
+    RideStatus.CANCELLED_BY_SYSTEM,
+    RideStatus.NO_DRIVER_FOUND
   ];
 
   if (terminalStatuses.includes(ride.status)) {
@@ -327,7 +328,10 @@ export async function cancelRide(id: string, reason: string, actorId: string) {
 
   const updated = await prisma.$transaction(async (tx) => {
     const changed = await tx.ride.updateMany({
-      where: { id, status: { in: ["SEARCHING_DRIVER", "ACCEPTED", "DRIVER_ARRIVING", "ARRIVED"] } },
+      where: {
+        id,
+        status: { in: ["SCHEDULED", "SEARCHING_DRIVER", "ACCEPTED", "DRIVER_ARRIVING", "ARRIVED"] }
+      },
       data: { status: RideStatus.CANCELLED_BY_SYSTEM }
     });
     if (!changed.count) throw new ApiError(409, "RIDE_INVALID_STATUS", "Khong the huy chuyen");
@@ -336,7 +340,10 @@ export async function cancelRide(id: string, reason: string, actorId: string) {
       data: {
         status: RideStatus.CANCELLED_BY_SYSTEM,
         cancelledAt: new Date(),
-        cancelReason: reason
+        cancelReason: reason,
+        cancellationFee: 0,
+        finalFare: 0,
+        fareBreakdown: { cancellationFee: 0, total: 0 }
       },
       include: {
         customer: true,
@@ -362,7 +369,12 @@ export async function cancelRide(id: string, reason: string, actorId: string) {
       }
     });
 
+    await tx.promotionUsage.deleteMany({ where: { rideId: id } });
     await refundCustomerWalletRide(tx, id, actorId);
+    await tx.driverOffer.updateMany({
+      where: { rideId: id, status: "PENDING" },
+      data: { status: "CANCELLED", respondedAt: new Date() }
+    });
 
     await tx.auditLog.create({
       data: {
