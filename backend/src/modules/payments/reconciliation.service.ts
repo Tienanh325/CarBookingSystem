@@ -1,5 +1,6 @@
 import { Prisma, type ReconciliationClassification, type ReconciliationStatus } from "@prisma/client";
 import { env } from "../../config/env";
+import { withDistributedLock } from "../../config/redis";
 import { prisma } from "../../config/prisma";
 import { emitToUser, notifyRide } from "../../realtime/socket";
 import { ApiError } from "../../utils/api-error";
@@ -113,7 +114,11 @@ export function startReconciliationWorker() {
     if (running) return;
     running = true;
     try {
-      await runReconciliation();
+      await withDistributedLock(
+        "payment-reconciliation",
+        Math.max(60_000, env.reconciliationIntervalMinutes * 60_000 - 1_000),
+        runReconciliation
+      );
     } catch (error) {
       console.error("Provider reconciliation failed", error);
     } finally {

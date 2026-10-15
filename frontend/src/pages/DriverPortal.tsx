@@ -5,6 +5,7 @@ import { Feedback, Modal, RideDetails } from "../components/LiveUI";
 import { mutate } from "../services/api";
 import { useResource, useRideRoom } from "../services/live";
 import { date, labels, money, type Driver, type DriverWallet, type Ride } from "../types";
+import { DriverAssets } from "../components/DriverAssets";
 export function DriverPortal() {
   const profile = useResource<Driver>("/drivers/me");
   const current = useResource<Ride | null>("/rides/current?as=driver");
@@ -299,6 +300,7 @@ export function DriverPortal() {
             </div>
           ))}
         </section>
+        <DriverAssets />
         {detail && (
           <Modal title="Chi tiết chuyến" close={() => setDetail(null)}>
             <RideDetails ride={detail} />

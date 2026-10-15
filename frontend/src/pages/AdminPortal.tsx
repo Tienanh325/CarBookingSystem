@@ -8,7 +8,9 @@ import {
   CloudRain,
   Download,
   Eye,
+  FileCheck2,
   LayoutDashboard,
+  KeyRound,
   LifeBuoy,
   Pencil,
   Plus,
@@ -16,6 +18,7 @@ import {
   RotateCcw,
   Route,
   Search,
+  ScrollText,
   ShieldAlert,
   Tags,
   UsersRound,
@@ -26,7 +29,13 @@ import { Feedback, Modal, RideDetails } from "../components/LiveUI";
 import { StatusBadge } from "../components/StatusBadge";
 import { apiRequest, downloadFile, mutate } from "../services/api";
 import { useLive, useResource } from "../services/live";
-import { canAccessAdminSection, canPerformAdminAction, type AdminSection } from "../services/rbac";
+import {
+  canAccessAdminSection,
+  canPerformAdminAction,
+  hasPermission,
+  type AdminSection
+} from "../services/rbac";
+import { AccessView, AssetReviewView, AuditView } from "../components/AdminOpsViews";
 import {
   date,
   labels,
@@ -58,7 +67,11 @@ const menus = [
   { id: "reconciliation", name: "Đối soát", icon: RefreshCw },
   { id: "reports", name: "Báo cáo CSV", icon: Download },
   { id: "safety", name: "SOS an toàn", icon: ShieldAlert },
-  { id: "support", name: "Hỗ trợ", icon: LifeBuoy }
+  { id: "support", name: "Hỗ trợ", icon: LifeBuoy },
+  { id: "documents", name: "Giấy tờ", icon: FileCheck2 },
+  { id: "vehicles", name: "Phương tiện", icon: CarFront },
+  { id: "access", name: "Phân quyền", icon: KeyRound },
+  { id: "audit", name: "Audit log", icon: ScrollText }
 ] as const;
 const noRoles: readonly string[] = [];
 
@@ -129,15 +142,19 @@ function Pager({ page, total, change }: { page: number; total: number; change: (
 export function AdminPortal() {
   const { auth } = useLive();
   const roles = auth?.user.roles ?? noRoles;
-  const allowedMenus = useMemo(() => menus.filter((menu) => canAccessAdminSection(roles, menu.id)), [roles]);
+  const permissions = auth?.user.permissions;
+  const allowedMenus = useMemo(
+    () => menus.filter((menu) => canAccessAdminSection(roles, menu.id, permissions)),
+    [roles, permissions]
+  );
   const [section, setSection] = useState<AdminSection>(() => allowedMenus[0]?.id ?? "rides");
   const activeSection = allowedMenus.some((menu) => menu.id === section)
     ? section
     : (allowedMenus[0]?.id ?? "rides");
-  const canCancelRides = canPerformAdminAction(roles, "cancelRide");
-  const canManageDrivers = canPerformAdminAction(roles, "manageDrivers");
-  const canManageUsers = canPerformAdminAction(roles, "manageUsers");
-  const canManageSurchargeRules = canPerformAdminAction(roles, "manageSurchargeRules");
+  const canCancelRides = canPerformAdminAction(roles, "cancelRide", permissions);
+  const canManageDrivers = canPerformAdminAction(roles, "manageDrivers", permissions);
+  const canManageUsers = canPerformAdminAction(roles, "manageUsers", permissions);
+  const canManageSurchargeRules = canPerformAdminAction(roles, "manageSurchargeRules", permissions);
 
   useEffect(() => {
     if (section !== activeSection) {
@@ -191,6 +208,26 @@ export function AdminPortal() {
             <SafetyQueue />
           ) : activeSection === "support" ? (
             <SupportQueue />
+          ) : activeSection === "documents" ? (
+            <AssetReviewView
+              kind="documents"
+              canReview={
+                permissions === undefined
+                  ? roles.includes("ADMIN")
+                  : hasPermission(permissions, "documents.review")
+              }
+            />
+          ) : activeSection === "vehicles" ? (
+            <AssetReviewView
+              kind="vehicles"
+              canReview={
+                permissions === undefined ? roles.includes("ADMIN") : hasPermission(permissions, "vehicles.review")
+              }
+            />
+          ) : activeSection === "access" ? (
+            <AccessView />
+          ) : activeSection === "audit" ? (
+            <AuditView />
           ) : (
             <RecordsView
               key={activeSection}

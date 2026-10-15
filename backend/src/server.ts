@@ -5,23 +5,27 @@ import { prisma } from "./config/prisma";
 import { registerSocketServer } from "./realtime/socket";
 import { startMatchingWorker } from "./modules/matching/matching.service";
 import { startReconciliationWorker } from "./modules/payments/reconciliation.service";
+import { startOperationsWorker } from "./workers/operations.worker";
+import { logger } from "./config/logger";
 
 async function bootstrap() {
   await prisma.$connect();
   const app = createApp();
   const server = http.createServer(app);
 
-  registerSocketServer(server);
+  await registerSocketServer(server);
   const stopMatchingWorker = startMatchingWorker();
   const stopReconciliationWorker = startReconciliationWorker();
+  const stopOperationsWorker = await startOperationsWorker();
 
   server.listen(env.port, () => {
-    console.log(`${env.appName} is running at http://localhost:${env.port}`);
+    logger.info({ port: env.port }, `${env.appName} started`);
   });
 
   const shutdown = async () => {
     stopMatchingWorker();
     stopReconciliationWorker();
+    await stopOperationsWorker();
     await prisma.$disconnect();
     server.close(() => process.exit(0));
   };
@@ -31,6 +35,6 @@ async function bootstrap() {
 }
 
 bootstrap().catch((error) => {
-  console.error(error);
+  logger.fatal({ error }, "Application bootstrap failed");
   process.exit(1);
 });

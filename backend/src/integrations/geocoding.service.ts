@@ -54,7 +54,11 @@ async function throttledFetch(url: URL) {
     if (delay) await wait(delay);
     lastRequest = Date.now();
     const response = await fetch(url, {
-      headers: { "User-Agent": `${env.appName}/1.0`, "Accept-Language": "vi,en" },
+      headers: {
+        "User-Agent": `${env.appName}/1.0`,
+        "Accept-Language": "vi,en",
+        ...(env.geocodingApiToken ? { Authorization: `Bearer ${env.geocodingApiToken}` } : {})
+      },
       signal: AbortSignal.timeout(8_000)
     });
     if (!response.ok) throw new Error(`Geocoding provider failed (${response.status})`);

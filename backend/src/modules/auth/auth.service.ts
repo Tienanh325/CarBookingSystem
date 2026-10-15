@@ -17,7 +17,9 @@ function durationMs(value: string, fallback: number) {
 async function publicUser(id: string) {
   const user = await prisma.user.findUnique({
     where: { id },
-    include: { roles: { include: { role: true } } }
+    include: {
+      roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } }
+    }
   });
   if (!user || user.status !== "ACTIVE")
     throw new ApiError(401, "AUTH_USER_INACTIVE", "Tai khoan khong kha dung");
@@ -27,7 +29,10 @@ async function publicUser(id: string) {
     phone: user.phone,
     email: user.email,
     status: user.status,
-    roles: user.roles.map((r) => r.role.name as RoleName)
+    roles: user.roles.map((r) => r.role.name as RoleName),
+    permissions: [
+      ...new Set(user.roles.flatMap((r) => r.role.permissions.map((item) => item.permission.key)))
+    ]
   };
 }
 async function issue(userId: string) {

@@ -121,8 +121,8 @@ describe("OpenAPI contract", () => {
     const actual = mountedExpressOperations();
     const documented = new Set(documentedOperations(openApiDocument).keys());
 
-    expect(actual.size).toBe(106);
-    expect(documented.size).toBe(106);
+    expect(actual.size).toBe(122);
+    expect(documented.size).toBe(122);
     expect([...actual].filter((operation) => !documented.has(operation))).toEqual([]);
     expect([...documented].filter((operation) => !actual.has(operation))).toEqual([]);
   });

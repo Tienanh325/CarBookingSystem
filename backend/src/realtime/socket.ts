@@ -1,13 +1,21 @@
 import type http from "http";
 import { Server } from "socket.io";
+import { createAdapter } from "@socket.io/redis-adapter";
 import { env } from "../config/env";
 import { prisma } from "../config/prisma";
 import { authenticate } from "../modules/auth/auth.service";
 import { createStoredNotification } from "../modules/notifications/notification.delivery";
+import { connectRedis } from "../config/redis";
 
 let io: Server | undefined;
-export function registerSocketServer(server: http.Server) {
+export async function registerSocketServer(server: http.Server) {
   io = new Server(server, { cors: { origin: env.appOrigins, credentials: true } });
+  const pubClient = await connectRedis();
+  if (pubClient) {
+    const subClient = pubClient.duplicate();
+    await subClient.connect();
+    io.adapter(createAdapter(pubClient, subClient));
+  }
   io.use(async (socket, next) => {
     try {
       socket.data.auth = await authenticate(String(socket.handshake.auth.token ?? ""));

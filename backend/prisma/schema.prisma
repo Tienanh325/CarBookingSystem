@@ -32,6 +32,13 @@ enum VehicleRegistrationStatus {
   REJECTED
 }
 
+enum DriverDocumentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
 enum RideStatus {
   SCHEDULED
   REQUESTED
@@ -237,9 +244,33 @@ model Role {
   label     String
   createdAt DateTime @default(now()) @map("created_at")
 
-  users UserRole[]
+  users       UserRole[]
+  permissions RolePermission[]
 
   @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid()) @db.Char(36)
+  key         String   @unique @db.VarChar(100)
+  label       String   @db.VarChar(150)
+  description String?  @db.VarChar(500)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String @map("role_id") @db.Char(36)
+  permissionId String @map("permission_id") @db.Char(36)
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
 }
 
 model UserRole {
@@ -334,15 +365,26 @@ model Vehicle {
 }
 
 model DriverDocument {
-  id         String    @id @default(uuid()) @db.Char(36)
-  driverId   String    @map("driver_id") @db.Char(36)
-  type       String
-  fileUrl    String    @map("file_url")
-  verifiedAt DateTime? @map("verified_at")
-  createdAt  DateTime  @default(now()) @map("created_at")
+  id              String               @id @default(uuid()) @db.Char(36)
+  driverId        String               @map("driver_id") @db.Char(36)
+  type            String               @db.VarChar(80)
+  fileUrl         String               @map("file_url") @db.VarChar(1000)
+  objectKey       String?              @map("object_key") @db.VarChar(500)
+  originalName    String?              @map("original_name") @db.VarChar(255)
+  mimeType        String?              @map("mime_type") @db.VarChar(120)
+  fileSize        Int?                 @map("file_size")
+  status          DriverDocumentStatus @default(PENDING)
+  expiresAt       DateTime?            @map("expires_at")
+  rejectionReason String?              @map("rejection_reason") @db.VarChar(500)
+  reviewedById    String?              @map("reviewed_by_id") @db.Char(36)
+  reviewedAt      DateTime?            @map("reviewed_at")
+  verifiedAt      DateTime?            @map("verified_at")
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @updatedAt @map("updated_at")
 
   driver DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
 
+  @@index([status, expiresAt])
   @@map("driver_documents")
 }
 

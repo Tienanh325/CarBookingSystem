@@ -13,6 +13,12 @@ import {
 } from "./driver.schemas";
 import * as walletController from "../wallets/wallet.controller";
 import { createWithdrawalSchema } from "../wallets/wallet.schemas";
+import {
+  assetIdSchema,
+  documentUploadSchema,
+  vehicleSchema,
+  vehicleUpdateSchema
+} from "./driver-assets.schemas";
 
 export const driverRouter = Router();
 
@@ -30,6 +36,25 @@ driverRouter.post("/me/location", validate({ body: updateLocationSchema }), cont
 driverRouter.get("/me/ride-requests", controller.listRideRequests);
 driverRouter.get("/me/earnings", controller.getEarnings);
 driverRouter.get("/me/wallet", walletController.getDriverWallet);
+driverRouter.get("/me/vehicles", controller.listVehicles);
+driverRouter.post("/me/vehicles", validate({ body: vehicleSchema }), controller.createVehicle);
+driverRouter.patch(
+  "/me/vehicles/:id",
+  validate({ params: assetIdSchema, body: vehicleUpdateSchema }),
+  controller.updateVehicle
+);
+driverRouter.delete("/me/vehicles/:id", validate({ params: assetIdSchema }), controller.deleteVehicle);
+driverRouter.get("/me/documents", controller.listDocuments);
+driverRouter.post(
+  "/me/documents/upload-url",
+  validate({ body: documentUploadSchema }),
+  controller.createDocumentUpload
+);
+driverRouter.get(
+  "/me/documents/:id/download-url",
+  validate({ params: assetIdSchema }),
+  controller.documentDownload
+);
 driverRouter.post(
   "/me/withdrawals",
   validate({ body: createWithdrawalSchema }),

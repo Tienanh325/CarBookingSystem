@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { asyncHandler } from "../../utils/async-handler";
 import { created, ok } from "../../utils/response";
 import * as service from "./driver.service";
+import * as assets from "./driver-assets.service";
 
 export const registerDriver = asyncHandler(async (req: Request, res: Response) => {
   const data = await service.registerDriver(req.auth!.userId, req.body);
@@ -82,3 +83,25 @@ export const cancelRide = asyncHandler(async (req: Request, res: Response) => {
 export const getEarnings = asyncHandler(async (req: Request, res: Response) => {
   res.json(ok(await service.getEarnings(req.auth!.userId)));
 });
+
+export const listVehicles = asyncHandler(async (req: Request, res: Response) =>
+  res.json(ok(await assets.listVehicles(req.auth!.userId)))
+);
+export const createVehicle = asyncHandler(async (req: Request, res: Response) =>
+  res.status(201).json(created(await assets.createVehicle(req.auth!.userId, req.body)))
+);
+export const updateVehicle = asyncHandler(async (req: Request, res: Response) =>
+  res.json(ok(await assets.updateVehicle(req.auth!.userId, req.params.id as string, req.body)))
+);
+export const deleteVehicle = asyncHandler(async (req: Request, res: Response) =>
+  res.json(ok(await assets.deleteVehicle(req.auth!.userId, req.params.id as string)))
+);
+export const listDocuments = asyncHandler(async (req: Request, res: Response) =>
+  res.json(ok(await assets.listDocuments(req.auth!.userId)))
+);
+export const createDocumentUpload = asyncHandler(async (req: Request, res: Response) =>
+  res.status(201).json(created(await assets.createDocumentUpload(req.auth!.userId, req.body)))
+);
+export const documentDownload = asyncHandler(async (req: Request, res: Response) =>
+  res.json(ok(await assets.documentDownload(req.auth!.userId, req.params.id as string)))
+);

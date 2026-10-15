@@ -23,6 +23,8 @@ export const env = {
   apiRateLimit: readNumber("API_RATE_LIMIT", 600),
   databaseUrl: process.env.DATABASE_URL,
   redisUrl: process.env.REDIS_URL,
+  metricsToken: process.env.METRICS_TOKEN,
+  alertWebhookUrl: process.env.ALERT_WEBHOOK_URL,
   jwtAccessSecret: process.env.JWT_ACCESS_SECRET ?? "dev-access-secret-change-me",
   jwtRefreshSecret: process.env.JWT_REFRESH_SECRET ?? "dev-refresh-secret-change-me",
   jwtAccessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? "15m",
@@ -35,9 +37,17 @@ export const env = {
   webPushPrivateKey: process.env.WEB_PUSH_PRIVATE_KEY,
   webPushSubject: process.env.WEB_PUSH_SUBJECT ?? "mailto:admin@goride.local",
   phoneMaskingSecret: process.env.PHONE_MASKING_SECRET ?? "dev-phone-masking-secret-change-me",
+  objectStorageEndpoint: process.env.OBJECT_STORAGE_ENDPOINT,
+  objectStorageRegion: process.env.OBJECT_STORAGE_REGION ?? "ap-southeast-1",
+  objectStorageBucket: process.env.OBJECT_STORAGE_BUCKET ?? "goride-documents",
+  objectStorageAccessKey: process.env.OBJECT_STORAGE_ACCESS_KEY,
+  objectStorageSecretKey: process.env.OBJECT_STORAGE_SECRET_KEY,
+  objectStorageForcePathStyle: process.env.OBJECT_STORAGE_FORCE_PATH_STYLE !== "false",
   routingBaseUrl: process.env.ROUTING_BASE_URL ?? "https://router.project-osrm.org",
+  routingApiToken: process.env.ROUTING_API_TOKEN,
   mapboxAccessToken: process.env.MAPBOX_ACCESS_TOKEN,
   geocodingBaseUrl: process.env.GEOCODING_BASE_URL ?? "https://photon.komoot.io",
+  geocodingApiToken: process.env.GEOCODING_API_TOKEN,
   matchingOfferSeconds: readNumber("MATCHING_OFFER_SECONDS", 20),
   matchingLeadMinutes: readNumber("SCHEDULE_MATCH_LEAD_MINUTES", 30),
   matchingMaxWaitSeconds: readNumber("MATCHING_MAX_WAIT_SECONDS", 180),
@@ -51,6 +61,7 @@ export const env = {
   vietQrAccountNumber: process.env.VIETQR_ACCOUNT_NUMBER ?? "0000000000",
   vietQrAccountName: process.env.VIETQR_ACCOUNT_NAME ?? "GORIDE",
   vietQrTemplate: process.env.VIETQR_TEMPLATE ?? "compact2",
+  vietQrQrBaseUrl: process.env.VIETQR_QR_BASE_URL ?? "https://img.vietqr.io/image",
   vietQrWebhookSecret: process.env.VIETQR_WEBHOOK_SECRET ?? "dev-vietqr-secret-change-me",
   vietQrPaymentTtlMinutes: readNumber("VIETQR_PAYMENT_TTL_MINUTES", 15),
   vietQrReconciliationUrl: process.env.VIETQR_RECONCILIATION_URL,
@@ -77,6 +88,10 @@ if (Boolean(env.webPushPublicKey) !== Boolean(env.webPushPrivateKey)) {
   throw new Error("WEB_PUSH_PUBLIC_KEY and WEB_PUSH_PRIVATE_KEY must be configured together");
 }
 
+if (Boolean(env.objectStorageAccessKey) !== Boolean(env.objectStorageSecretKey)) {
+  throw new Error("OBJECT_STORAGE_ACCESS_KEY and OBJECT_STORAGE_SECRET_KEY must be configured together");
+}
+
 if (isProduction) {
   if (!env.databaseUrl) throw new Error("DATABASE_URL is required in production");
   if (env.jwtAccessSecret.length < 32 || env.jwtAccessSecret.includes("change-me")) {
@@ -93,5 +108,19 @@ if (isProduction) {
   }
   if (env.phoneMaskingSecret.length < 32 || env.phoneMaskingSecret.includes("change-me")) {
     throw new Error("PHONE_MASKING_SECRET must be a strong production secret");
+  }
+  if (!env.redisUrl) throw new Error("REDIS_URL is required in production");
+  if (!env.metricsToken) throw new Error("METRICS_TOKEN is required in production");
+  if (!env.mapboxAccessToken && env.routingBaseUrl.includes("router.project-osrm.org")) {
+    throw new Error("Production routing must use MAPBOX_ACCESS_TOKEN or an SLA-backed ROUTING_BASE_URL");
+  }
+  if (env.geocodingBaseUrl.includes("photon.komoot.io")) {
+    throw new Error("Production geocoding must use an SLA-backed GEOCODING_BASE_URL");
+  }
+  if (!env.vietQrReconciliationUrl || !env.vietQrReconciliationToken) {
+    throw new Error("Production payment reconciliation provider is required");
+  }
+  if (env.vietQrQrBaseUrl.includes("img.vietqr.io")) {
+    throw new Error("Production QR generation must use an SLA-backed VIETQR_QR_BASE_URL");
   }
 }

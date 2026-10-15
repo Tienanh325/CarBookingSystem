@@ -39,7 +39,7 @@ export function createVietQrDetails(reference: string, amount: number, expiresAt
     bankBin: env.vietQrBankBin,
     accountNumber: env.vietQrAccountNumber,
     accountName: env.vietQrAccountName,
-    qrUrl: `https://img.vietqr.io/image/${encodeURIComponent(image)}?${query.toString()}`,
+    qrUrl: `${env.vietQrQrBaseUrl.replace(/\/$/, "")}/${encodeURIComponent(image)}?${query.toString()}`,
     expiresAt
   };
 }

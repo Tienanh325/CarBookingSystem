@@ -20,14 +20,27 @@ const sections: AdminSection[] = [
   "reconciliation",
   "reports",
   "safety",
-  "support"
+  "support",
+  "documents",
+  "vehicles",
+  "access",
+  "audit"
 ];
 
 const expectedSections: Record<string, AdminSection[]> = {
   ADMIN: sections,
-  OPERATOR: ["overview", "rides", "drivers", "surcharges", "safety"],
-  SUPPORT: ["rides", "users", "safety", "support"],
-  ACCOUNTANT: ["overview", "rides", "payments", "withdrawals", "refunds", "reconciliation", "reports"]
+  OPERATOR: ["overview", "rides", "drivers", "surcharges", "safety", "documents", "vehicles"],
+  SUPPORT: ["rides", "users", "safety", "support", "audit"],
+  ACCOUNTANT: [
+    "overview",
+    "rides",
+    "payments",
+    "withdrawals",
+    "refunds",
+    "reconciliation",
+    "reports",
+    "audit"
+  ]
 };
 
 for (const [role, expected] of Object.entries(expectedSections)) {

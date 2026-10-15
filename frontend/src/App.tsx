@@ -20,7 +20,7 @@ export default function App() {
   if (location.pathname.startsWith("/share/")) return <SharedRidePage />;
   if (!auth) return <Login />;
   const roles = auth.user.roles;
-  const canUseOperationsPortal = canAccessOperationsPortal(roles);
+  const canUseOperationsPortal = canAccessOperationsPortal(roles, auth.user.permissions);
   const portals = [
     ...(roles.includes("CUSTOMER") ? [{ path: "/customer", label: "Đặt xe", icon: MapPinned }] : []),
     ...(roles.includes("DRIVER") ? [{ path: "/driver", label: "Tài xế", icon: CarTaxiFront }] : []),

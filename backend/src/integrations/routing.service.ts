@@ -68,7 +68,10 @@ async function requestOsrm(points: RoutePoint[]) {
   url.searchParams.set("geometries", "geojson");
   url.searchParams.set("steps", "false");
   const response = await fetch(url, {
-    headers: { "User-Agent": `${env.appName}/1.0` },
+    headers: {
+      "User-Agent": `${env.appName}/1.0`,
+      ...(env.routingApiToken ? { Authorization: `Bearer ${env.routingApiToken}` } : {})
+    },
     signal: AbortSignal.timeout(8_000)
   });
   if (!response.ok) throw new Error(`OSRM routing failed (${response.status})`);

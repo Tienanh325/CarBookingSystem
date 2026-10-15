@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { env } from "../../config/env";
+import { withDistributedLock } from "../../config/redis";
 import { prisma } from "../../config/prisma";
 import { emitAdmin, emitToUser, notifyRide } from "../../realtime/socket";
 import { haversineDistanceKm } from "../../utils/geo";
@@ -178,8 +179,9 @@ async function tick() {
 }
 
 export function startMatchingWorker() {
-  void tick();
-  const timer = setInterval(() => void tick(), 3_000);
+  const execute = () => withDistributedLock("matching-worker", 2_900, tick);
+  void execute();
+  const timer = setInterval(() => void execute(), 3_000);
   timer.unref();
   return () => clearInterval(timer);
 }

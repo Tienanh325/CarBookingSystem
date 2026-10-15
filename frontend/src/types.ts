@@ -1,4 +1,11 @@
-export type User = { id: string; phone: string; fullName: string; email?: string; roles: string[] };
+export type User = {
+  id: string;
+  phone: string;
+  fullName: string;
+  email?: string;
+  roles: string[];
+  permissions?: string[];
+};
 export type AuthResult = { user: User; tokens: { accessToken: string; refreshToken: string } };
 export type Point = { address: string; lat: number; lng: number };
 export type RouteGeometry = { type: "LineString"; coordinates: number[][] };

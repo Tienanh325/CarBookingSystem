@@ -1,7 +1,7 @@
 import cors from "cors";
 import express from "express";
 import helmet from "helmet";
-import morgan from "morgan";
+import pinoHttp from "pino-http";
 import rateLimit from "express-rate-limit";
 import { env } from "./config/env";
 import { apiRouter } from "./routes";
@@ -10,6 +10,8 @@ import { notFoundMiddleware } from "./middlewares/not-found.middleware";
 import { prisma } from "./config/prisma";
 import swaggerUi from "swagger-ui-express";
 import { openApiDocument } from "./openapi";
+import { logger } from "./config/logger";
+import { metricsMiddleware, metricsRegistry } from "./middlewares/metrics.middleware";
 
 export function createApp() {
   const app = express();
@@ -18,7 +20,8 @@ export function createApp() {
   app.use(cors({ origin: env.appOrigins, credentials: true }));
   app.use(express.json({ limit: "1mb" }));
   app.use(express.urlencoded({ extended: true }));
-  app.use(morgan(env.nodeEnv === "production" ? "combined" : "dev"));
+  app.use(pinoHttp({ logger }));
+  app.use(metricsMiddleware);
   app.use(
     rateLimit({
       windowMs: 60_000,
@@ -44,6 +47,11 @@ export function createApp() {
   });
 
   app.get("/openapi.json", (_req, res) => res.json(openApiDocument));
+  app.get("/metrics", async (req, res) => {
+    if (env.metricsToken && req.get("authorization") !== `Bearer ${env.metricsToken}`)
+      return res.status(401).end();
+    res.type(metricsRegistry.contentType).send(await metricsRegistry.metrics());
+  });
   app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(openApiDocument, { explorer: true }));
 
   app.use("/api", apiRouter);
